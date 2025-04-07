@@ -14,8 +14,8 @@ class RobotsDataset(CostumDataset):
         self.n_agents = n_agents
 
         # initial state TODO: set as arg
-        self.x0 = torch.tensor([-2, -2, 0, 0,
-                                2, -2, 0, 0,
+        self.x0 = torch.tensor([4, 0, 0, 0,
+                                0, 0, 0, 0,
                                 ])
         self.xbar = x_bar
         
@@ -77,7 +77,7 @@ class RobotsDataset(CostumDataset):
                     self.xbar[5:6] + torch.empty(1).uniform_(0, 0.3)"""
             
         for rollout_num in range(num_samples):
-            vecs = self.generate_vector_with_min_distance(interval_x1=(-2, 2), interval_x2=(2, 2.1), min_distance=2.0)
+            vecs = self.generate_vector_with_min_distance(interval_x1=(-3, 7), interval_x2=(4, 4.1), min_distance=2.0)
             data[rollout_num, 0, :state_dim_x0] = \
                 self.x0 + self.std_ini * torch.randn(self.x0.shape)
             data[rollout_num, 1:, state_dim_x0:state_dim_x0+2] = \

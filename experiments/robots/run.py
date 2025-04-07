@@ -33,9 +33,11 @@ msg = print_args(args)
 logger.info(msg)
 torch.manual_seed(args.random_seed)
 
+
+
 # ------------ 1. Dataset ------------
-xbar_train = torch.tensor([2, 2, 0, 0, -2., 2 ,0 ,0 ])
-xbar_verif2 = torch.tensor([-2, 2, 0, 0, 2., 2 ,0 ,0 ])
+xbar_train = torch.tensor([-1, 4, 0, 0, 5., 4 ,0 ,0 ])
+xbar_verif2 = torch.tensor([5, 4, 0, 0, -1., 4 ,0 ,0 ])
 xbar_verif3 = torch.tensor([0.5, 4, 0, 0, 1.5, 4 ,0 ,0 ])
 x_init = torch.tensor([7, 4, 0, 0, -3., 4 ,0 ,0 ])
 
@@ -65,8 +67,8 @@ obstacle_covs = [
     torch.tensor([[0.1, 0.1]], device=device)
             ] * len(obstacle_centers)
 
-obstacle_centers = None
-obstacle_covs = None
+#obstacle_centers = None
+#obstacle_covs = None
 
 dataset = RobotsDataset(random_seed=args.random_seed, horizon=args.horizon, x_bar=xbar_train, std_ini=args.std_init_plant, n_agents=2)
 

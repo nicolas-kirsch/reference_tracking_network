@@ -17,7 +17,7 @@ def plot_trajectories(
     # plot obstacles
     if not obstacle_covs is None:
         assert not obstacle_centers is None
-        yy, xx = np.meshgrid(np.linspace(-3, 3, 100), np.linspace(-3, 3, 100))
+        yy, xx = np.meshgrid(np.linspace(-3, 7, 100), np.linspace(-3, 7, 100))
         zz = xx * 0
         for center, cov in zip(obstacle_centers, obstacle_covs):
             distr = multivariate_normal(
