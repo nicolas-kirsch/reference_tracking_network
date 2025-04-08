@@ -7,4 +7,4 @@ if torch.cuda.is_available():
     print('[INFO] GPU available')
 else:
     print('[INFO] running on CPU')
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu" if torch.cuda.is_available() else "cpu")

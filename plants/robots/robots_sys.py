@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import block_diag
 from scipy.signal import place_poles
+from config import device
 
 import torch
 import torch.nn.functional as F
@@ -160,16 +161,26 @@ class RobotsSystem(torch.nn.Module):
             next state of the noise-free dynamics.
         """
 
-        x = x.view(-1, 1, self.state_dim)
+        x = x.view(-1, 1, self.state_dim) 
         dxref = u.view(-1, 1, self.in_dim)
         
-        e = (xbar+dxref) - x[:,:,[0, 1, 4, 5]]
+        xbar = xbar.to(device) # Antoine added this line
+        dxref = dxref.to(device) # Antoine added this line
 
+
+        indices_x = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1])
+        # e = (xbar+dxref) - x[:,:,[0, 1, 4, 5]]
+        e = (xbar+dxref) - x[:,:,indices_x]
+
+        v = v.to(device)  # Antoine added this line
+        # e = e.to(device)  # Antoine added this line
         v = v + e 
 
         u = -F.linear(x,self.K_p) -F.linear(v,self.K_i)
         
-        tanh_q = torch.tanh(x[:,:,[2, 3, 6, 7]])
+        indices_v = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[2, 3])
+        # tanh_q = torch.tanh(x[:,:,[2, 3, 6, 7]])
+        tanh_q = torch.tanh(x[:,:,indices_v])
 
         if self.linear_plant:
             # x is batched but A is not => can use F.linear to compute xA^T
@@ -196,10 +207,14 @@ class RobotsSystem(torch.nn.Module):
         Returns:
             next state.
         """
-
+        # v = v.to(device) # Antoine added this line
+        # x = x.to(device) # Antoine added this line
         f,v = self.noiseless_forward(t, x,v, u,xbar)
 
+        # f = f.to(device) # Antoine added this line
+        # w = w.to(device) # Antoine added this line
         f = f + w.view(-1, 1, self.state_dim) 
+
         
 
         return (f,v)
@@ -224,8 +239,14 @@ class RobotsSystem(torch.nn.Module):
         x = self.x_init.detach().clone().repeat(data.shape[0], 1, 1)
         u = self.u_init.detach().clone().repeat(data.shape[0], 1, 1)
         v = torch.zeros(u.shape)
-        w = data[:,:,:8]
-        xbar=data[:,:,[8, 9, 12, 13]]
+        w = data[:,:,:4*self.n_agents]
+        indices_xbar = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1], for_xbar=True)
+        xbar = data[:,:,indices_xbar]
+        # xbar=data[:,:,[8, 9, 12, 13]]
+
+        v = v.to(device) # Antoine added this line
+        x = x.to(device) # Antoine added this line
+        w = w.to(device) # Antoine added this line
 
         # Simulate
         for t in range(data.shape[1]):
@@ -236,6 +257,8 @@ class RobotsSystem(torch.nn.Module):
             #u_k = c(x_k,xbar_k)
             u = controller(x,v,xbar[:, t:t+1, :])                                       # shape = (batch_size, 1, in_dim)
 
+            xbar = xbar.to(device) # Antoine added this line
+            x = x.to(device) # Antoine added this line
             if t == 0:
                 x_log, u_log, v_log = x, u,v
                 e_log = xbar[:, t:t+1, :] - x[:,:,[0,1,4,5]]
@@ -253,3 +276,47 @@ class RobotsSystem(torch.nn.Module):
 
         self.v_log = v_log.detach()
         return x_log, e_log, u_log
+    
+    def augmented_rollout(self, controller, x_log, e_log, u_log, data, train = False):
+        """
+        Generate an augmented rollout by adding a backward trajectory to the forward rollout.
+
+        Args:
+            - x_log (torch.Tensor): Forward rollout states of shape (batch_size, T, state_dim).
+            - e_log (torch.Tensor): Forward rollout errors of shape (batch_size, T, error_dim).
+            - u_log (torch.Tensor): Forward rollout inputs of shape (batch_size, T, in_dim).
+
+        Returns:
+            - x_aug (torch.Tensor): Augmented states of shape (batch_size, 2*T, state_dim).
+            - e_aug (torch.Tensor): Augmented errors of shape (batch_size, 2*T, error_dim).
+            - u_aug (torch.Tensor): Augmented inputs of shape (batch_size, 2*T, in_dim).
+        """
+        # Extract the last state of the forward rollout as the initial condition for the backward rollout
+        back_x0 = x_log[:, -1, :].detach().clone()  # Last state of the forward rollout
+        back_xbar = x_log[:, 0, :].detach().clone()  # First state of the forward rollout
+
+        # Define the backward trajectory
+        backward_data = torch.zeros_like(data)
+        backward_data[:, 0:1, :8] = back_x0[:, :8].unsqueeze(1)  # Add a singleton dimension for the first entry
+        backward_data[:, 1:, 8:] = back_xbar[:, :8].unsqueeze(1).expand(-1, data.size(1) - 1, -1)  # Expand to match the time dimension
+
+        # Generate the backward trajectory
+        x_back, e_back, u_back = self.rollout(controller, backward_data, train=train)
+
+        # Combine forward and backward rollouts
+        x_aug = torch.cat([x_log, x_back], dim=1)
+        e_aug = torch.cat([e_log, e_back], dim=1)
+        u_aug = torch.cat([u_log, u_back], dim=1)
+        
+
+        return x_aug, e_aug, u_aug
+
+    def generate_indices(self, n_agents, state_dim_per_agent=4, selected_dims=[0, 1], for_xbar=False):
+        indices = []
+        start_index = state_dim_per_agent * n_agents if for_xbar else 0
+
+        for agent in range(n_agents):
+            base_index = start_index + agent * state_dim_per_agent
+            for dim in selected_dims:
+                indices.append(base_index + dim)
+        return indices

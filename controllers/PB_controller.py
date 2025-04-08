@@ -9,6 +9,8 @@ from config import device
 from .contractive_ren import ContractiveREN
 from .MLP import MLP
 from utils.assistive_functions import to_tensor
+from config import device
+
 
 
 class PerfBoostController(nn.Module):
@@ -52,8 +54,8 @@ class PerfBoostController(nn.Module):
         # set initial conditions
         self.input_init = input_init.reshape(1, -1)
         self.output_init = output_init.reshape(1, -1)
-        self.vg_init = torch.zeros(1,4).reshape(1,-1)
-        self.xbar_init = torch.zeros(1,4).reshape(1,-1)
+        self.vg_init = torch.zeros(1,4).reshape(1,-1) # Antoine added this line change 6 to 4
+        self.xbar_init = torch.zeros(1,4).reshape(1,-1) # Antoine added this line change 6 to 4
 
 
         # set dimensions
@@ -112,6 +114,8 @@ class PerfBoostController(nn.Module):
         # reconstruct the noise
         w_ = input_t - u_noiseless # shape = (self.batch_size, 1, self.dim_in)
 
+        w_ =w_.to(device) # Antoine added this line
+        xbar = xbar.to(device) # Antoine added this line
         # apply REN
         output_REN = self.c_ren.forward(w_)
         mlp_input = torch.cat((w_, xbar), dim=2)

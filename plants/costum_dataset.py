@@ -30,12 +30,12 @@ class CostumDataset(Dataset):
         assert data.shape[0]==num_samples
         return data
 
-    def get_data(self, num_train_samples=1024, num_test_samples=1024):
+    def get_data(self, num_train_samples=1024, num_test_samples=1024, x_interval=(-3, 7), y_interval=(4, 4.1)):
         '''
         Main function to get train and test datasets. No need to modify.
         '''
-        train_data = self._generate_data(2048)
-        test_data = self._generate_data(2048)
+        train_data = self._generate_data(2048, x_interval, y_interval)
+        test_data = self._generate_data(2048, x_interval, y_interval)
         train_data = train_data[0:num_train_samples, :, :]
         test_data = test_data[0:num_test_samples, :, :]
         return train_data, test_data

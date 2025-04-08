@@ -162,4 +162,24 @@ cython_debug/
 .idea/
 
 experiments/*/saved_results/
+experiments/*/saved_results_v2/
+experiments/*/saved_results_v3/
+experiments/*/saved_results_v4/
+experiments/*/saved_results_v5/
+experiments/*/saved_results_v6/
+experiments/*/saved_results_v7/
+experiments/*/saved_results_v8/
+experiments/*/saved_results_rt/
+experiments/*/saved_results_rt_v2/
+experiments/*/saved_results_rt_v3/
+experiments/*/saved_results_rt_v4/
+experiments/*/saved_results_rt_v5/
+experiments/*/saved_results_rt_v6/
+experiments/*/saved_results_rt_v7/
+experiments/*/sensitivity_study/
+experiments/*/trajecctories/
+experiments/*/saved_models/
+experiments/*/round_trip_test_results/
+experiments/*/trajectories/
+
 *.pkl

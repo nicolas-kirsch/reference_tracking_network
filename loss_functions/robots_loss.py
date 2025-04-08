@@ -96,11 +96,27 @@ class RobotsLoss(LQLossFH):
         # bound
         if self.sat_bound is not None:
             loss_val = torch.tanh(loss_val/self.sat_bound)  # shape = (S, 1, 1)
+            loss_x = torch.tanh(loss_x/self.sat_bound)
+            loss_u = torch.tanh(loss_u/self.sat_bound)
+            loss_ca = torch.tanh(loss_ca/self.sat_bound)
+            loss_obst = torch.tanh(loss_obst/self.sat_bound)
+            loss_speed = torch.tanh(loss_speed/self.sat_bound)
         if self.loss_bound is not None:
-            loss_val = self.loss_bound * loss_val           # shape = (S, 1, 1)
+            loss_val = self.loss_bound * loss_val          # shape = (S, 1, 1)
+            loss_x = self.loss_bound * loss_x
+            loss_u = self.loss_bound * loss_u
+            loss_ca = self.loss_bound * loss_ca
+            loss_obst = self.loss_bound * loss_obst
+            loss_speed = self.loss_bound * loss_speed
+
         # average over the samples
         loss_val = torch.sum(loss_val, 0)/xs.shape[0]       # shape = (1, 1)
-        return loss_val
+        loss_x = torch.sum(loss_x, 0)/xs.shape[0]
+        loss_u = torch.sum(loss_u, 0)/xs.shape[0]
+        loss_ca = torch.sum(loss_ca, 0)/xs.shape[0]
+        loss_obst = torch.sum(loss_obst, 0)/xs.shape[0]
+        loss_speed = torch.sum(loss_speed, 0)/xs.shape[0]
+        return loss_val, loss_obst, loss_x, loss_u, loss_ca, loss_speed
 
     def f_loss_obst(self, x_batched):
         """
@@ -165,8 +181,94 @@ class RobotsLoss(LQLossFH):
             x_batch = x_batch.reshape(*x_batch.shape, 1)
         distance_sq = self.get_pairwise_distance_sq(x_batch)  # shape = (S, T, n_agents, n_agents)
         col_matrix = (0.0001 < distance_sq) * (distance_sq < self.min_dist ** 2)  # Boolean collision matrix of shape (S, T, n_agents, n_agents)
+
+        # Calculate the percentage of rollouts with collisions
+        rollouts_with_collisions = col_matrix.any(dim=(1, 2, 3))  # Check if any collision occurred in each rollout (shape = (S,))
+        num_rollouts_with_collisions = rollouts_with_collisions.sum().item()
+        total_rollouts = x_batch.shape[0]
+        percentage = (num_rollouts_with_collisions / total_rollouts) * 100
+        
         n_coll = col_matrix.sum().item()    # all collisions at all times and across all rollouts
-        return n_coll/2                     # each collision is counted twice
+
+        # return n_coll/2, percentage                    # each collision is counted twice
+        return num_rollouts_with_collisions, percentage
+    
+    def count_obstacle_collisions(self, x_batch, dataset, threshold=1.0):
+        """
+        Count the number of collisions between agents and obstacles and identify
+        the rollouts that caused collisions.
+
+        Args:
+            - x_batch: tensor of shape (S, T, state_dim, 1)
+                Rollouts representing the position of agents at different time-steps.
+            - dataset: tensor of shape (S, T, state_dim)
+                Dataset containing the initial conditions (x0) and reference (xref).
+            - threshold: float, optional
+                Threshold for detecting collisions. Defaults to one sigma.
+
+        Return:
+            - n_collisions: total number of collisions with obstacles.
+            - collision_cases: list of tensors of shape (T, state_dim)
+                Rollouts that caused collisions.
+        """
+
+        # Reshape x_batched for processing
+        qx = x_batch[:, :, 0::4]  # x of all agents. shape = (S, T, n_agents, 1)
+        qy = x_batch[:, :, 1::4]  # y of all agents. shape = (S, T, n_agents, 1)
+        q = torch.cat((qx, qy), dim=-1).view(x_batch.shape[0], x_batch.shape[1], 1, -1).squeeze(dim=2)  # shape = (S, T, 2*n_agents)
+
+        collision_matrix = torch.zeros(x_batch.shape[0], x_batch.shape[1], device=x_batch.device)  # shape = (S, T)
+
+        # for center, cov in zip(self.obstacle_centers, self.obstacle_covs):
+        #     # Compute the probability density function for each obstacle
+        #     pdf = normpdf(q, mu=center, cov=cov)  # shape = (S, T)
+
+        #     # Set the threshold to one sigma if not provided
+        #     if threshold is None:
+        #         # threshold = 1 / ((2 * torch.pi) ** (0.5 * q.shape[-1]) * torch.sqrt(torch.prod(cov)))
+        #         threshold = 0.5
+
+        #     collision_matrix += (pdf > threshold).float()  # Detect collisions based on the threshold
+        # Check distances to obstacles
+        # for center in self.obstacle_centers:
+        #     # Compute the Euclidean distance between agents and the obstacle center
+        #     print(center.shape)
+        #     center = center.squeeze()  # Remove any extra singleton dimensions
+        #     print(center.shape)
+        #     print(q.shape)
+        #     center_expanded = center.view(1, 1, -1).expand(q.shape)  # Shape: (S, T, n_agents, 2)
+        #     print(center_expanded.shape)
+        #     distances = torch.sqrt(((q - center_expanded) ** 2).sum(dim=-1))  # shape = (S, T, n_agents)
+
+        #     # Check if any agent is within the threshold distance from the obstacle
+        #     collision_matrix += (distances <= threshold).any(dim=-1).float()  # shape = (S, T)
+        for agent_idx in range(self.n_agents):  # Loop over each agent
+            for center in self.obstacle_centers:  # Loop over each obstacle
+                # Ensure center has the correct shape for broadcasting
+                center = center.squeeze()  # Remove any extra singleton dimensions
+                center_expanded = center.view(1, 1, -1).expand(x_batch.shape[0], x_batch.shape[1], -1)  # Shape: (S, T, 2)
+
+                # Extract the x and y positions of the current agent
+                agent_positions = q[:, :, agent_idx * 2:(agent_idx + 1) * 2]  # Shape: (S, T, 2)
+
+                # Compute the Euclidean distance between the agent and the obstacle center
+                distances = torch.sqrt(((agent_positions - center_expanded) ** 2).sum(dim=-1))  # Shape: (S, T)
+
+                # Check if the agent is within the threshold distance from the obstacle
+                collision_matrix += (distances <= threshold).float()  # Shape: (S, T)
+
+        # Check if any collision occurred in each rollout
+        rollouts_with_collisions = collision_matrix.any(dim=1)  # shape = (S,)
+        n_collisions = rollouts_with_collisions.sum().item()  # Total number of collisions across all rollouts and time steps
+
+            # Calculate the percentage of rollouts with collisions
+        total_rollouts = x_batch.shape[0]
+        collision_percentage = (n_collisions / total_rollouts) * 100
+
+        collision_cases = dataset[rollouts_with_collisions]  # Filter the dataset using the boolean mask
+
+
+        return n_collisions, collision_percentage, collision_cases
 
     def get_pairwise_distance_sq(self, x_batch):
         """
