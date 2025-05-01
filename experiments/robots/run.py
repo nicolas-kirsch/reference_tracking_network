@@ -113,6 +113,8 @@ x0 = torch.tensor([4, 0, 0, 0,   # x y vx vy
 dataset = RobotsDataset(random_seed=args.random_seed, horizon=args.horizon, x_bar=xbar_direct, x0=x0, std_ini=args.std_init_plant, n_agents=args.n_agents)
 
 # divide to train and test
+print("x-interval: ", args.x_interval)
+print('x-interval type: ', type(args.x_interval))
 train_data, test_data = dataset.get_data(num_train_samples=args.num_rollouts, num_test_samples=500, x_interval=args.x_interval, y_interval=args.y_interval)
 train_data, test_data = train_data.to(device), test_data.to(device)
 

@@ -8,3 +8,4 @@ if torch.cuda.is_available():
 else:
     print('[INFO] running on CPU')
 device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+print(f'[INFO] running on: {device}')

@@ -19,12 +19,12 @@ from utils.assistive_functions import compute_distance_metric
 args = argument_parser()
 # ----- SET UP LOGGER -----
 now = datetime.now().strftime("%m_%d_%H_%M_%S")
-save_path = os.path.join(BASE_DIR, 'experiments', 'robots', 'saved_results_rt')
+save_path = os.path.join(BASE_DIR, 'experiments', 'robots', args.save_path)
 
 # save_folder = os.path.join(save_path, 'perf_boost_'+now)
 save_folder = os.path.join(
     save_path,
-    f"{now}_nl_{args.dim_nl}_int_{args.dim_internal}_rol_{args.num_rollouts}_ep_{args.epochs}"
+    f"{now}_nl_{args.dim_nl}_int_{args.dim_internal}_rol_{args.num_rollouts}_ep_{args.epochs}_rt_{args.rt_epochs}"
 )
 os.makedirs(save_folder)
 
@@ -125,10 +125,10 @@ x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, data=plot_data, trai
 plot_trajectories(
     x_log[0, :, :], # remove extra dim due to batching
     xbar=plot_data[0,5,8:], n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_init.pdf',
+    save_folder=save_folder, filename='CL_init.svgz',
     text="CL - before training", T=t_ext,
     obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs
+    obstacle_covs=loss_fn.obstacle_covs, file_type='svgz'
 )
 
 
@@ -159,16 +159,17 @@ print(f"Number of parameters: {total_params}")
 plot_trajectories(
     x_verif[0, :, :], # remove extra dim due to batching
     xbar=xbar_direct, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_diag_ref.pdf',
+    save_folder=save_folder, filename='CL_diag_ref.png',
     text="CL - before training", T=t_ext, 
     obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot
+    obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot,
+    file_type='png'
 )
 
 plot_trajectories(
     x_verif[1, :, :], # remove extra dim due to batching
     xbar=xbar_diag, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_direct_ref.pdf',
+    save_folder=save_folder, filename='CL_direct_ref.png',
     text="CL - before training", T=t_ext, 
     obstacle_centers=loss_fn.obstacle_centers,
     obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot
@@ -177,7 +178,7 @@ plot_trajectories(
 plot_trajectories(
     x_verif[2, :, :], # remove extra dim due to batching
     xbar=xbar_center, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_center_ref.pdf',
+    save_folder=save_folder, filename='CL_center_ref.png',
     text="CL - before training", T=t_ext, 
     obstacle_centers=loss_fn.obstacle_centers,
     obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot
@@ -187,7 +188,7 @@ plot_trajectories(
 # plot_trajectories(
 #     x_verif[3, :, :], # remove extra dim due to batching
 #     xbar=xbar_direct, n_agents=sys.n_agents,
-#     save_folder=save_folder, filename='CL_round_trip.pdf',
+#     save_folder=save_folder, filename='CL_round_trip.png',
 #     text="CL - round trip", T=t_ext, 
 #     obstacle_centers=loss_fn.obstacle_centers,
 #     obstacle_covs=loss_fn.obstacle_covs, round_trip=True, xbar2=dataset.x0
@@ -220,24 +221,6 @@ else:
                 # Augment the data with the backward rollout
                 x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, data=train_data_batch, train=True,
                                                                     x_log=x_log, e_log=e_log, u_log=u_log)
-                # # Extract the last and first points of the forward rollout
-                # back_x0 = x_log[:, -1, :].detach().clone()  # Last state of the forward rollout
-                # back_xbar = x_log[:, 0, :].detach().clone()  # First state of the forward rollout
-
-                # # Define the backward trajectory
-                # backward_data = torch.zeros_like(train_data_batch)
-                # backward_data[:, 0:1, :8] = back_x0[:, :8]  # Start at the last state
-                # backward_data[:, 1:, 8:] = back_xbar[:, :8]  # Move to the first state
-
-                # # Perform the backward rollout
-                # x_back, e_back, u_back = sys.rollout(
-                #     controller=ctl, data=backward_data, train=True,
-                # )
-
-                # # Combine forward and backward rollouts
-                # x_log = torch.cat([x_log, x_back], dim=1)
-                # e_log = torch.cat([e_log, e_back], dim=1)
-                # u_log = torch.cat([u_log, u_back], dim=1)
             # loss of this rollout
             loss = loss_fn.forward(x_log, u_log,e_log)[0]
             # take a step
@@ -327,7 +310,7 @@ with torch.no_grad():
     # loss
     test_loss, test_obst_loss = loss_fn.forward(x_log, u_log,e_log)[:2]
     test_loss, test_obst_loss = test_loss.item(), test_obst_loss.item()
-    test_metrics = compute_distance_metric(x_log, test_data, sys.n_agents)
+    test_metrics = compute_distance_metric(x_log, test_data, sys.n_agents, rt=True)
     msg = "Loss: %.4f" % (test_loss)
     if args.alpha_obst:
         msg += " -- Obstacle Loss: %.4f" % (test_obst_loss)
@@ -388,7 +371,7 @@ x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, data=plot_data, trai
 plot_trajectories(
     x_log[0, :, :], # remove extra dim due to batching
     xbar=plot_data[0,5,8:], n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_trained.pdf',
+    save_folder=save_folder, filename='CL_trained.png',
     text="CL - trained controller", T=t_ext, 
     obstacle_centers=loss_fn.obstacle_centers,
     obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot
@@ -401,7 +384,7 @@ v_verif = sys.v_log
 plot_trajectories(
     x_verif[0, :, :], # remove extra dim due to batching
     xbar=xbar_direct, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_diag_trained.pdf',
+    save_folder=save_folder, filename='CL_diag_trained.png',
     text="rPB - trained controller", T=t_ext, 
     obstacle_centers=loss_fn.obstacle_centers,
     obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot
@@ -410,7 +393,7 @@ plot_trajectories(
 plot_trajectories(
     x_verif[1, :, :], # remove extra dim due to batching
     xbar=xbar_diag, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_direct_trained.pdf',
+    save_folder=save_folder, filename='CL_direct_trained.png',
     text="rPB - trained controller", T=t_ext, 
     obstacle_centers=loss_fn.obstacle_centers,
     obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot
@@ -419,7 +402,7 @@ plot_trajectories(
 plot_trajectories(
     x_verif[2, :, :], # remove extra dim due to batching
     xbar=xbar_center, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_center_trained.pdf',
+    save_folder=save_folder, filename='CL_center_trained.png',
     text="CL - trained controller", T=t_ext, 
     obstacle_centers=loss_fn.obstacle_centers,
     obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot
@@ -435,7 +418,7 @@ plot_trajectories(
 # plot_trajectories(
 #    x_ref_evol[0,:,:], # remove extra dim due to batching
 #     xbar=xbar_direct, n_agents=sys.n_agents,
-#     save_folder=save_folder, filename='CL_xbar_evolution.pdf',
+#     save_folder=save_folder, filename='CL_xbar_evolution.png',
 #     text="CL - evolution of the reference", T=t_ext, dots = True,
 #     obstacle_centers=loss_fn.obstacle_centers,
 #     obstacle_covs=loss_fn.obstacle_covs
@@ -464,7 +447,7 @@ plot_trajectories(
 # plt.subplots_adjust(top=0.9)  # Adjust the top space to make room for the suptitle
 
 # plt.suptitle(f'Performance boosting offset to the reference over time \n for the diagonal scenario', fontsize=13)
-# plt.savefig(os.path.join(save_folder, "U_over_time.pdf"))
+# plt.savefig(os.path.join(save_folder, "U_over_time.png"))
 # plt.close()
 
 # v_verif = v_verif.cpu().detach().numpy()
@@ -491,7 +474,7 @@ plot_trajectories(
 # plt.subplots_adjust(top=0.9)  # Adjust the top space to make room for the suptitle
 
 # plt.suptitle(f'Integral variable over time \n for the diagonal scenario', fontsize=13)
-# plt.savefig(os.path.join(save_folder, "V_over_time.pdf"))
+# plt.savefig(os.path.join(save_folder, "V_over_time.png"))
 # plt.close()
 
 

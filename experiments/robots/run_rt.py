@@ -104,6 +104,13 @@ ctl = PerfBoostController(
     output_amplification=20,
 ).to(device)
 
+ctl_back = PerfBoostController(
+    noiseless_forward=sys.noiseless_forward,
+    input_init=sys.x_init, output_init=sys.u_init,
+    dim_internal=args.dim_internal, dim_nl=args.dim_nl,
+    initialization_std=args.cont_init_std,
+    output_amplification=20,
+).to(device)
 
 # ------------ 4. Loss ------------
 Q = 95*torch.kron(torch.eye(args.n_agents), torch.eye(2)).to(device)   # TODO: move to args and print info
@@ -129,16 +136,17 @@ if args.rt_epochs > 0:
 # ------------ 5. Optimizer ------------
 valid_data = train_data      # use the entire train data for validation
 if args.rt_epochs > 0:
-    # use the entire backward train data for validation
-    valid_data_back= back_train_data
+    back_valid_data = back_test_data
 assert not (valid_data is None and args.return_best)
 optimizer = torch.optim.Adam(ctl.parameters(), lr=args.lr)
+if args.rt_epochs > 0:
+    back_optimizer = torch.optim.Adam(ctl_back.parameters(), lr=args.lr)
  
 # ------------ 6. Training ------------
 # plot closed-loop trajectories before training the controller
 logger.info('Plotting closed-loop trajectories before training the controller...')
 x_log, e_log, u_log = sys.rollout(ctl, plot_data)
-x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, data=plot_data, train=False,
+x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, controller_back=ctl_back, data=plot_data, train=False,
                                                                 x_log=x_log, u_log=u_log, e_log=e_log)
 plot_trajectories(
     x_log[0, :, :], # remove extra dim due to batching
@@ -168,7 +176,7 @@ data_verif[2:3, 1:, 8:] = \
 
 
 x_verif, e_verif, u_verif = sys.rollout(ctl, data_verif)
-x_verif, _, u_verif = sys.augmented_rollout(controller=ctl, data=data_verif, train=False,
+x_verif, _, u_verif = sys.augmented_rollout(controller=ctl, controller_back=ctl_back, data=data_verif, train=False,
                                                                 x_log=x_verif, u_log=u_verif, e_log=e_verif)
 
 total_params = sum(p.numel() for p in ctl.parameters())
@@ -201,91 +209,55 @@ plot_trajectories(
     obstacle_covs=loss_fn.obstacle_covs, save= not args.no_save_plot
 )
 
-# ------------ 6. Training ------------
 logger.info('\n------------ Begin training ------------')
 best_valid_loss = 1e6
 t = time.time()
-# Phase 1: Forward Training
-logger.info('Phase 1: Forward Training...')
-for epoch in range(1 + args.epochs):
+for epoch in range(1+args.epochs):
+    # print(f"Epoch {epoch}")
+    # iterate over all data batches
     for train_data_batch in train_dataloader:
-        # Forward training
         optimizer.zero_grad()
-        x_log, e_log, u_log = sys.rollout(controller=ctl, data=train_data_batch, train=True)
-        loss = loss_fn.forward(x_log, u_log, e_log)[0]
+        # simulate over horizon steps
+        x_log, e_log, u_log= sys.rollout(
+            controller=ctl, data=train_data_batch, train=True,
+        )
+        # loss of this rollout
+        loss = loss_fn.forward(x_log, u_log,e_log)[0]
+        # take a step
         loss.backward()
         optimizer.step()
 
-        if epoch%args.log_epoch == 0:
-            msg = 'Epoch: %i --- train loss: %.2f'% (epoch, loss)
-
-            if args.return_best:
-                # rollout the current controller on the valid data
-                with torch.no_grad():
-                    x_log_valid, e_log_valid, u_log_valid = sys.rollout(
-                        controller=ctl, data=valid_data, train=False,
-                    )
-                    # loss of the valid data
-                    loss_valid = loss_fn.forward(x_log_valid, u_log_valid,e_log_valid)[0]
-                msg += ' ---||--- validation loss: %.2f' % (loss_valid.item())
-                # compare with the best valid loss
-                if loss_valid.item()<best_valid_loss:
-                    best_valid_loss = loss_valid.item()
-                    best_params_ren = ctl.get_parameters_as_vector()  # record state dict if best on valid
-                    best_params_mlp = ctl.get_mlp_parameters()
-                    msg += ' (best so far)'
-            duration = time.time() - t
-            msg += ' ---||--- time: %.0f s' % (duration)
-            logger.info(msg)
-            t = time.time()
+    # print info
+    if epoch%args.log_epoch == 0:
+        msg = 'Epoch: %i --- train loss: %.2f'% (epoch, loss)
+        
+        if args.return_best:
+            # rollout the current controller on the valid data
+            with torch.no_grad():
+                x_log_valid, e_log_valid, u_log_valid= sys.rollout(
+                    controller=ctl, data=valid_data, train=False,
+                )
+                # loss of the valid data
+                loss_valid = loss_fn.forward(x_log_valid, u_log_valid,e_log_valid)[0]
+            msg += ' ---||--- validation loss: %.2f' % (loss_valid.item())
+            # compare with the best valid loss
+            if loss_valid.item()<best_valid_loss:
+                best_valid_loss = loss_valid.item()
+                best_params_ren = ctl.get_parameters_as_vector()  # record state dict if best on valid
+                best_params_mlp = ctl.get_mlp_parameters()
+                msg += ' (best so far)'
+        duration = time.time() - t
+        msg += ' ---||--- time: %.0f s' % (duration)
+        logger.info(msg)
+        t = time.time()
 
 # set to best seen during training
 if args.return_best:
     ctl.set_parameters_as_vector(best_params_ren)
     ctl.set_mlp_parameters(best_params_mlp)
+    
 
-# Phase 2: Backward Training
-if args.rt_epochs > 0:
-    logger.info('Phase 2: Backward Training...')
-    for epoch in range(1 + int(args.rt_epochs * args.epochs)):
-        for back_data_batch in back_train_dataloader:
-            # Backward training
-            optimizer.zero_grad()
-            x_log, e_log, u_log = sys.rollout(controller=ctl, data=back_data_batch, train=True)
-            loss = loss_fn_back.forward(x_log, u_log, e_log)[0]
-            loss.backward()
-            optimizer.step()
-
-        if epoch%args.log_epoch == 0:
-            msg = 'Epoch: %i --- train loss: %.2f'% (epoch, loss)
-            if args.return_best:
-                # rollout the current controller on the valid data
-                with torch.no_grad():
-                    x_log_valid, e_log_valid, u_log_valid = sys.rollout(
-                        controller=ctl, data=valid_data_back, train=False,
-                    )
-
-                    # loss of the valid data
-                    loss_valid = loss_fn_back.forward(x_log_valid, u_log_valid,e_log_valid)[0]
-                msg += ' ---||--- validation loss: %.2f' % (loss_valid.item())
-                # compare with the best valid loss
-                if loss_valid.item()<best_valid_loss:
-                    best_valid_loss = loss_valid.item()
-                    best_params_ren = ctl.get_parameters_as_vector()  # record state dict if best on valid
-                    best_params_mlp = ctl.get_mlp_parameters()
-                    msg += ' (best so far)'
-            duration = time.time() - t
-            msg += ' ---||--- time: %.0f s' % (duration)
-            logger.info(msg)
-            t = time.time()
-
-# Set the controller to the best parameters seen during training
-if args.return_best:
-    ctl.set_parameters_as_vector(best_params_ren)
-    ctl.set_mlp_parameters(best_params_mlp)
-
-logger.info('Training completed.')
-# ------ 7. Save and evaluate the trained model ------
+# ------ 7. Save and evaluate the forward model ------
 # save
 res_dict = ctl.c_ren.state_dict()
 # TODO: append args
@@ -293,6 +265,65 @@ res_dict['Q'] = Q
 filename = os.path.join(save_folder, 'trained_controller'+'.pt')
 torch.save(res_dict, filename)
 logger.info('[INFO] saved trained model.')
+
+# # Do a forward rollout
+# x_log, e_log, u_log = sys.rollout(ctl, plot_data)
+# # Get the last state of the rollout and set is as the initial state for the next rollout
+# back_x0 = x_log[:, -1, :].detach().clone()
+
+
+# -------- 8. Backward training --------
+if args.rt_epochs > 0:
+    # Create a new controller for the backward training and set it to the same parameters as the forward controller
+    ctl_back.set_parameters_as_vector(ctl.get_parameters_as_vector())
+    ctl_back.set_mlp_parameters(ctl.get_mlp_parameters())
+    # Now train the backward controller
+    logger.info('\n------------ Begin backward training ------------')
+    t = time.time()
+    best_valid_loss = 1e6
+    for epoch in range(1+int(args.rt_epochs*args.epochs)):
+        # print(f"Epoch {epoch}")
+        # iterate over all data batches
+        for train_data_batch in back_train_dataloader:
+            back_optimizer.zero_grad()
+            # simulate over horizon steps
+            x_log, e_log, u_log= sys.rollout(
+                controller=ctl_back, data=train_data_batch, train=True,
+            )
+            # loss of this rollout
+            loss = loss_fn_back.forward(x_log, u_log,e_log)[0]
+            # take a step
+            loss.backward()
+            back_optimizer.step()
+
+        if epoch%args.log_epoch == 0:
+            msg = 'Epoch: %i --- train loss: %.2f'% (epoch, loss)
+
+            if args.return_best:
+                # rollout the current controller on the valid data
+                with torch.no_grad():
+                    x_log_valid, e_log_valid, u_log_valid= sys.rollout(
+                        controller=ctl_back, data=back_valid_data, train=False,
+                    )
+                    # loss of the valid data
+                    loss_valid = loss_fn_back.forward(x_log_valid, u_log_valid,e_log_valid)[0]
+                msg += ' ---||--- validation loss: %.2f' % (loss_valid.item())
+                # compare with the best valid loss
+                if loss_valid.item()<best_valid_loss:
+                    best_valid_loss = loss_valid.item()
+                    best_params_ren = ctl_back.get_parameters_as_vector()  # record state dict if best on valid
+                    best_params_mlp = ctl_back.get_mlp_parameters()
+                    msg += ' (best so far)'
+            duration = time.time() - t
+            msg += ' ---||--- time: %.0f s' % (duration)
+            logger.info(msg)
+            t = time.time()
+
+    # set to best seen during training
+    if args.return_best:
+        ctl_back.set_parameters_as_vector(best_params_ren)
+        ctl_back.set_mlp_parameters(best_params_mlp)
+
 
 
 # evaluate on the train data
@@ -303,7 +334,7 @@ with torch.no_grad():
     )   # use the entire train data, not a batch
 
     # Augment the data with the backward rollout
-    x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, data=train_data, train=False,
+    x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, controller_back=ctl_back, data=train_data, train=False,
                                                                 x_log=x_log, e_log=e_log, u_log=u_log)
 
     # evaluate losses
@@ -324,7 +355,7 @@ with torch.no_grad():
         controller=ctl, data=test_data, train=False,
     )
     # Augment the data with the backward rollout
-    x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, data=test_data, train=False,
+    x_log, e_log, u_log = sys.augmented_rollout(controller=ctl,controller_back=ctl_back, data=test_data, train=False,
                                                                 x_log=x_log, e_log=e_log, u_log=u_log)
     # loss
     test_loss, test_obst_loss = loss_fn.forward(x_log, u_log,e_log)[:2]
@@ -391,7 +422,7 @@ if args.record:
 # plot closed-loop trajectories using the trained controller
 logger.info('Plotting closed-loop trajectories using the trained controller...')
 x_log, e_log, u_log = sys.rollout(ctl, plot_data)
-x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, data=plot_data, train=False,
+x_log, e_log, u_log = sys.augmented_rollout(controller=ctl, controller_back=ctl_back, data=plot_data, train=False,
                                                                 x_log=x_log, e_log=e_log, u_log=u_log)
 
 plot_trajectories(
@@ -404,7 +435,7 @@ plot_trajectories(
 )
 
 x_verif, e_log, u_verif = sys.rollout(ctl, data_verif)
-x_verif, e_log, u_verif = sys.augmented_rollout(controller=ctl, data=data_verif, train=False,
+x_verif, e_log, u_verif = sys.augmented_rollout(controller=ctl, controller_back=ctl_back, data=data_verif, train=False,
                                                                 x_log=x_verif, e_log=e_log, u_log=u_verif)
 v_verif = sys.v_log
 plot_trajectories(

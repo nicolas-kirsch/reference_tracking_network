@@ -12,49 +12,54 @@ set -e
 # done
 
 # sensitivity analysis for epochs and num-rollouts
-for epochs in 600 800 1000; do
-    for num_rollouts in 600 800 1000; do
-        echo "Running simulation with epochs: $epochs and num-rollouts: $num_rollouts"
-        python run.py \
-            --epochs "$epochs" \
-            --num-rollouts "$num_rollouts" \
-            --record epochs_rollouts \
-            --filename epochs_rollouts7 \
-            --x-interval "(-1, 5)" \
-            --y-interval "(4, 4.1)" \
-            --save-path "saved_results_v8"
-        echo "Finished running with epochs: $epochs and num-rollouts: $num_rollouts"
-        echo "------------------------------------"
-    done
-done
+# for epochs in 600 800 1000; do
+#     for num_rollouts in 600 800 1000; do
+#         echo "Running simulation with epochs: $epochs and num-rollouts: $num_rollouts"
+#         python run.py \
+#             --epochs "$epochs" \
+#             --num-rollouts "$num_rollouts" \
+#             --record epochs_rollouts \
+#             --filename epochs_rollouts7 \
+#             --x-interval "(-1, 5)" \
+#             --y-interval "(4, 4.1)" \
+#             --save-path "saved_results_v8"
+#         echo "Finished running with epochs: $epochs and num-rollouts: $num_rollouts"
+#         echo "------------------------------------"
+#     done
+# done
 
 
-# # Sensitivity analysis for dim-internal and dim-nl
-for dim_internal in 2 4 8 12; do
-    for dim_nl in 2 4 8 12; do
-        echo "Running simulation with dim-internal: $dim_internal and dim-nl: $dim_nl"
-        python run.py --epochs 600 --num-rollouts 600 --dim-internal "$dim_internal" --dim-nl "$dim_nl" --record dim --filename dim7
-        echo "Finished running with dim-internal: $dim_internal and dim-nl: $dim_nl"
-        echo "------------------------------------"
-    done
-done
+# # # # Sensitivity analysis for dim-internal and dim-nl
+# for dim_internal in 4 8 12 16; do
+#     for dim_nl in 4 8 12 16; do
+#         echo "Running simulation with dim-internal: $dim_internal and dim-nl: $dim_nl"
+#         python run.py --dim-internal "$dim_internal" --dim-nl "$dim_nl" --record dim --filename dim10 --save-path "saved_results_v10"
+#         echo "Finished running with dim-internal: $dim_internal and dim-nl: $dim_nl"
+#         echo "------------------------------------"
+#     done
+# done
 
 # # # # Sensitivity analysis for num-rollouts
-# for num_rollouts in 5 10 50 100 200 300 400 500 600 700 800; do
+# for num_rollouts in 10 50 100 200 300 400 500 600 700 800; do
 #     echo "Running simulation with num-rollouts: $num_rollouts"
-#     python run.py --num-rollouts "$num_rollouts" --record rollouts --filename rollouts7
+#     python run.py --num-rollouts "$num_rollouts" --record rollouts --filename rollouts10 --save-path "saved_results_v10" 
 #     echo "Finished running with num-rollouts: $num_rollouts"
 #     echo "------------------------------------"
 # done
 
 # Sensitivity analysis for rt-epochs
+# for rt_epoch in 0.0 0.2 0.4 0.6 0.8 1; do
+#     echo "Running simulation with rt-epochs: $rt_epoch"
+#     python run_rt_v3.py --epochs 400 --rt-epochs "$rt_epoch" --record rollouts --filename rt_epochs15 --save-path "saved_results_v15"  --use-previous-params True
+#     echo "Finished running with rt-epochs: $rt_epoch"
+#     echo "------------------------------------"
+# done
 for rt_epoch in 0.0 0.2 0.4 0.6 0.8 1; do
     echo "Running simulation with rt-epochs: $rt_epoch"
-    python run_v3.py --epochs 600 --num-rollouts 600 --rt-epochs "$rt_epoch" --record rollouts --filename rt_epochs7
+    python run_rt_v3.py --epochs 400 --rt-epochs "$rt_epoch" --record rollouts --filename rt_epochs16 --save-path "saved_results_v16"  --use-previous-params False --model-path "saved_models/trained_controller_0.pt"
     echo "Finished running with rt-epochs: $rt_epoch"
     echo "------------------------------------"
 done
-
 echo "All sensitivity analysis simulations completed."
 
 

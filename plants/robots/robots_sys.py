@@ -33,7 +33,8 @@ class RobotsSystem(torch.nn.Module):
         # initial state
         x_init = torch.zeros((1,self.state_dim)) if x_init is None else x_init.reshape(1, -1) # shape = (1, state_dim)
         self.register_buffer('x_init', x_init)
-        u_init = torch.zeros(1, int(self.x_init.shape[1]/2)) if u_init is None else u_init.reshape(1, -1)   # shape = (1, in_dim)
+        # u_init = torch.zeros(1, int(self.x_init.shape[1]/2)) if u_init is None else u_init.reshape(1, -1)   # shape = (1, in_dim)
+        u_init = torch.zeros((1,self.in_dim)) if u_init is None else u_init.reshape(1, -1)
         self.register_buffer('u_init', u_init)
 
         assert self.x_init.shape[1] == self.state_dim
@@ -277,7 +278,7 @@ class RobotsSystem(torch.nn.Module):
         self.v_log = v_log.detach()
         return x_log, e_log, u_log
     
-    def augmented_rollout(self, controller, x_log, e_log, u_log, data, train = False):
+    def augmented_rollout(self, controller, controller_back, x_log, e_log, u_log, data, train = False):
         """
         Generate an augmented rollout by adding a backward trajectory to the forward rollout.
 
@@ -301,7 +302,7 @@ class RobotsSystem(torch.nn.Module):
         backward_data[:, 1:, 8:] = back_xbar[:, :8].unsqueeze(1).expand(-1, data.size(1) - 1, -1)  # Expand to match the time dimension
 
         # Generate the backward trajectory
-        x_back, e_back, u_back = self.rollout(controller, backward_data, train=train)
+        x_back, e_back, u_back = self.rollout(controller_back, backward_data, train=train)
 
         # Combine forward and backward rollouts
         x_aug = torch.cat([x_log, x_back], dim=1)

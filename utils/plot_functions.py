@@ -11,7 +11,7 @@ from matplotlib.patches import Circle  # Import Circle from matplotlib.patches
 def plot_trajectories(
     x, xbar, n_agents, save_folder, text="", save=True, filename='', T=100, horizon = 50,
     dots=False, circles=False, axis=True, min_dist=1, f=5,
-    obstacle_centers=None, obstacle_covs=None, round_trip=False, xbar2=None, treshold=None
+    obstacle_centers=None, obstacle_covs=None, round_trip=False, xbar2=None, treshold=None, file_type='png'
 ):
     filename = 'trajectories.pdf' if filename == '' else filename
 
@@ -112,8 +112,8 @@ def plot_trajectories(
     if save:
         fig.savefig(
             os.path.join(save_folder, filename),
-            format='png', dpi=300, bbox_inches='tight'
-        )
+            format=file_type, dpi=300, bbox_inches='tight'
+        )       
         plt.close()
     else:
         plt.show()
@@ -210,3 +210,49 @@ def create_gif_from_frames(frame_folder, gif_filename, duration=0.1):
             frames.append(imageio.imread(frame_path))
     imageio.mimsave(gif_filename, frames, duration=duration)
 
+def plot_obstacles_and_random_points(
+    obstacle_centers, obstacle_covs, x_range=(-1, 5), y_range=(4, 5),
+    n_points=5, save_folder=None, filename='random_points_plot.png', file_type='png'
+):
+    # Create the figure and axis
+    fig, ax = plt.subplots(figsize=(5, 5))
+
+    # Plot obstacles
+    if obstacle_centers is not None and obstacle_covs is not None:
+        yy, xx = np.meshgrid(np.linspace(-3, 7, 200), np.linspace(-3, 7, 200))
+        zz = xx * 0
+        for center, cov in zip(obstacle_centers, obstacle_covs):
+            distr = multivariate_normal(
+                cov=np.diag(cov.flatten()),
+                mean=center.flatten()
+            )
+            for i in range(xx.shape[0]):
+                for j in range(xx.shape[1]):
+                    zz[i, j] += distr.pdf([xx[i, j], yy[i, j]])
+            ax.pcolormesh(xx, yy, zz, cmap='Greys', shading='gouraud')
+
+    # Generate random points
+    np.random.seed(42)  # For reproducibility
+    x_blue = np.random.uniform(x_range[0], x_range[1], n_points)
+    y_blue = np.random.uniform(y_range[0], y_range[1], n_points)
+    x_orange = np.random.uniform(x_range[0], x_range[1], n_points)
+    y_orange = np.random.uniform(y_range[0], y_range[1], n_points)
+
+    # Plot random points
+    ax.scatter(x_blue, y_blue, color='tab:blue', label='Blue Points', s=50, marker='x')
+    ax.scatter(x_orange, y_orange, color='tab:orange', label='Orange Points', s=50, marker='x')
+
+    # Add labels and legend
+    ax.set_xlim(-3, 7)
+    ax.set_ylim(-3, 7)
+    
+
+    # Save or show the plot
+    if save_folder:
+        fig.savefig(
+            os.path.join(save_folder, filename),
+            format=file_type, dpi=300, bbox_inches='tight'
+        )
+        plt.close(fig)
+    else:
+        plt.show()

@@ -19,7 +19,7 @@ def argument_parser():
     # dataset
     parser.add_argument('--horizon', type=int, default=100, help='Time horizon for the computation. Default is 100.')
     parser.add_argument('--n-agents', type=int, default=2, help='Number of agents. Default is 2.')
-    parser.add_argument('--num-rollouts', type=int, default=200, help='Number of rollouts in the training data. Default is 30.')
+    parser.add_argument('--num-rollouts', type=int, default=500, help='Number of rollouts in the training data. Default is 600.')
     parser.add_argument('--std-init-plant', type=float, default=0.2, help='std of the plant initial conditions. Default is 0.2.') # Anto: I changed the default value from 0.2 to 1
 
     # plant
@@ -28,8 +28,8 @@ def argument_parser():
 
     # controller
     parser.add_argument('--cont-init-std', type=float, default=0.1, help='Initialization std for controller params. Default is 0.1.')
-    parser.add_argument('--dim-internal', type=int, default=8, help='Dimension of the internal state of the controller. Adjusts the size of the linear part of REN. Default is 8.')
-    parser.add_argument('--dim-nl', type=int, default=8, help='size of the non-linear part of REN. Default is 8.')
+    parser.add_argument('--dim-internal', type=int, default=12, help='Dimension of the internal state of the controller. Adjusts the size of the linear part of REN. Default is 8.')
+    parser.add_argument('--dim-nl', type=int, default=12, help='size of the non-linear part of REN. Default is 8.')
 
     # loss
     parser.add_argument('--alpha-u', type=float, default=0.1/400, help='Weight of the loss due to control input "u". Default is 0.1/400.')  #TODO: 400 is output_amplification^2
@@ -38,8 +38,8 @@ def argument_parser():
     parser.add_argument('--min-dist', type=float, default=1.0, help='TODO. Default is 1.0 if "col-av" is True, else None.')  #TODO: add help
 
     # optimizer
-    parser.add_argument('--batch-size', type=int, default=1500, help='Number of forward trajectories of the closed-loop system at each step. Default is 5.')
-    parser.add_argument('--epochs', type=int, default=300, help='Total number of epochs for training. Default is 5000 if collision avoidance, else 100.')
+    parser.add_argument('--batch-size', type=int, default=1500, help='Number of forward trajectories of the closed-loop system at each step. Default is 100.')
+    parser.add_argument('--epochs', type=int, default=400, help='Total number of epochs for training. Default is 5000 if collision avoidance, else 100.')
     parser.add_argument('--lr', type=float, default=-1, help='Learning rate. Default is 2e-3 if collision avoidance, else 5e-3.')
     parser.add_argument('--log-epoch', type=int, default=-1, help='Frequency of logging in epochs. Default is 0.1 * epochs.')
     parser.add_argument('--return-best', type=bool, default=True, help='Return the best model on the validation data among all logged iterations. The train data can be used instead of validation data. The Default is True.')
@@ -57,15 +57,16 @@ def argument_parser():
       
     # Roudtrip
     parser.add_argument('--rt-epochs', type=float, default=0.0, help='Percentage of epochs to be used for learning to come back to x0, Default is 0.0.')
+    parser.add_argument('--use-previous-params', type=bool, default=False, help='Use the best ctrl param of the previous ctrl. Default is False.')
 
     # Load model
     parser.add_argument('--model-path', type=str, default=None, help='Path to the saved model file')
 
     # Save results path
-    parser.add_argument('--save-path', type=str, default='saved_results', help='Path to save the results. Default is "saved_results".')
+    parser.add_argument('--save-path', type=str, default='saved_results_rt', help='Path to save the results. Default is "saved_results".')
 
     # Training range x_interval tuple
-    parser.add_argument('--x-interval', type=ast.literal_eval, default=(-3, 7), help='Interval for x. Default is (-3, 7).')
+    parser.add_argument('--x-interval', type=ast.literal_eval, default=(-3, 5), help='Interval for x. Default is (-3, 7).')
     parser.add_argument('--y-interval', type=ast.literal_eval, default=(4, 4.1), help='Interval for y. Default is (4, 4.1).')
 
     # TODO: add the following

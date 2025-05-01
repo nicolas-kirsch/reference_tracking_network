@@ -6,14 +6,14 @@ from config import device
 def to_tensor(x):
     return torch.from_numpy(x).contiguous().float().to(device) if isinstance(x, np.ndarray) else x
 
-def compute_distance_metric(x_log, data, n_agents):
+def compute_distance_metric(x_log, data, n_agents, rt=False):
     """
     Compute the average ratio of bird flight distance to actual distance traveled
     for all agents over all rollouts in the batch.
 
     Args:
         x_log (torch.Tensor): The trajectory of shape (batch_size, Time, state_dim).
-        data (torch.Tensor): The data of shape (batch_size, Time, state_dim), where
+        data (torch.Tensor): The data of shape (batch_size, Time, state_dim_w + state+dim_x_ref), where
                              the first time step is x0 and the last is x_bar.
         n_agents (int): The number of agents.
 
@@ -34,8 +34,8 @@ def compute_distance_metric(x_log, data, n_agents):
             # Extract x0 and x_bar for the agent
             x0_x = data[batch, 0, 4 * agent].cpu().numpy()  # Initial x position
             x0_y = data[batch, 0, 4 * agent + 1].cpu().numpy()  # Initial y position
-            x_bar_x = data[batch, -1, 4 * agent].cpu().numpy()  # Target x position
-            x_bar_y = data[batch, -1, 4 * agent + 1].cpu().numpy()  # Target y position
+            x_bar_x = data[batch, -1, 4*n_agents + 4 * agent].cpu().numpy()  # Target x position
+            x_bar_y = data[batch, -1, 4*n_agents + 4 * agent + 1].cpu().numpy()  # Target y position
 
             # Compute actual distance traveled
             actual_distance = sum(
@@ -45,6 +45,10 @@ def compute_distance_metric(x_log, data, n_agents):
 
             # Compute bird flight distance
             bird_flight_distance = ((x_bar_x - x0_x)**2 + (x_bar_y - x0_y)**2)**0.5
+
+            # if round-trip then multiply the bird flight distance by 2
+            if rt:
+                bird_flight_distance *= 2
 
             # Compute the metric for this agent
             if actual_distance > 0:
