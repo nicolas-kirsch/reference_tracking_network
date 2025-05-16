@@ -22,6 +22,13 @@ class RobotsDataset(CostumDataset):
         
 
     def generate_vector_with_min_distance(self,interval_x1=(-3, 3), interval_x2=(2, 3), min_distance=1.0):
+
+        # vec1 = torch.tensor([
+        #         torch.empty(1).uniform_(interval_x1[0], interval_x1[1]),
+        #         torch.empty(1).uniform_(interval_x2[0], interval_x2[1])
+        #     ]).flatten()
+        
+        # return vec1
         while True:
             # Generate the first vector (x1 in [-2, 2], x2 in [0, 1])
             vec1 = torch.tensor([

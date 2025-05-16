@@ -61,7 +61,8 @@ class RobotsLoss(LQLossFH):
             x_batch_centered = x_batch - x_bar
         else:
             x_batch_centered = x_batch"""
-        speed = x_batch[:,:,[2,3,6,7]]
+        # speed = x_batch[:,:,[2,3,6,7]]
+        speed = x_batch[:,:,[2,3]]
 
         xTQx = torch.matmul(
             torch.matmul(e_batch.transpose(-1, -2), self.Q),

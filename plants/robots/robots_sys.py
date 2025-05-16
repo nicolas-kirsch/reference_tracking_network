@@ -8,13 +8,13 @@ import torch.nn.functional as F
 
 
 class RobotsSystem(torch.nn.Module):
-    def __init__(self, linear_plant: bool, x_init=None, u_init=None, k: float=1.0, n_agents: int = 2):
+    def __init__(self, linear_plant: bool, x_init=None, u_init=None, k: float=1.0, n_agents: int = 1):
         """
 
         Args:
             xbar: concatenated nominal initial point of all agents
             linear_plant: if True, a linearized model of the system is used.
-                             O.w., the model is non-lineardue to the dependence of friction on the speed.
+                             O.w., the model is non-linear due to the dependence of friction on the speed.
             x_init: concatenated initial point of all agents. Defaults to xbar when None.
             u_init: initial input to the plant. Defaults to zero when None.
             k (float): gain of the pre-stabilizing controller (acts as a spring constant).
@@ -168,10 +168,10 @@ class RobotsSystem(torch.nn.Module):
         xbar = xbar.to(device) # Antoine added this line
         dxref = dxref.to(device) # Antoine added this line
 
-
-        indices_x = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1])
+        xbar = xbar[..., :self.in_dim]  # Select only the first 2 dimensions for xbar 
+        # indices_x = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1])
         # e = (xbar+dxref) - x[:,:,[0, 1, 4, 5]]
-        e = (xbar+dxref) - x[:,:,indices_x]
+        e = (xbar+dxref) - x[:,:,[0, 1]]
 
         v = v.to(device)  # Antoine added this line
         # e = e.to(device)  # Antoine added this line
@@ -179,9 +179,9 @@ class RobotsSystem(torch.nn.Module):
 
         u = -F.linear(x,self.K_p) -F.linear(v,self.K_i)
         
-        indices_v = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[2, 3])
+        # indices_v = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[2, 3])
         # tanh_q = torch.tanh(x[:,:,[2, 3, 6, 7]])
-        tanh_q = torch.tanh(x[:,:,indices_v])
+        tanh_q = torch.tanh(x[:,:,[2, 3]])
 
         if self.linear_plant:
             # x is batched but A is not => can use F.linear to compute xA^T
@@ -241,8 +241,8 @@ class RobotsSystem(torch.nn.Module):
         u = self.u_init.detach().clone().repeat(data.shape[0], 1, 1)
         v = torch.zeros(u.shape)
         w = data[:,:,:4*self.n_agents]
-        indices_xbar = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1], for_xbar=True)
-        xbar = data[:,:,indices_xbar]
+        # indices_xbar = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1], for_xbar=True)
+        xbar = data[:,:,4:]
         # xbar=data[:,:,[8, 9, 12, 13]]
 
         v = v.to(device) # Antoine added this line
@@ -262,14 +262,14 @@ class RobotsSystem(torch.nn.Module):
             x = x.to(device) # Antoine added this line
             if t == 0:
                 x_log, u_log, v_log = x, u,v
-                e_log = xbar[:, t:t+1, :] - x[:,:,[0,1,4,5]]
+                e_log = xbar[:, t:t+1, :2] - x[:,:,[0, 1]]
 
 
             else:
                 x_log = torch.cat((x_log, x), 1)
                 u_log = torch.cat((u_log, u), 1)
                 v_log = torch.cat((v_log, v), 1)
-                e_log = torch.cat((e_log, xbar[:, t:t+1, :] - x[:,:,[0,1,4,5]]), 1)
+                e_log = torch.cat((e_log, xbar[:, t:t+1, :2] - x[:,:,[0, 1]]), 1)
 
         controller.reset()
         if not train:

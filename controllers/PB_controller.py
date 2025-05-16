@@ -54,8 +54,8 @@ class PerfBoostController(nn.Module):
         # set initial conditions
         self.input_init = input_init.reshape(1, -1)
         self.output_init = output_init.reshape(1, -1)
-        self.vg_init = torch.zeros(1,4).reshape(1,-1) # Antoine added this line change 6 to 4
-        self.xbar_init = torch.zeros(1,4).reshape(1,-1) # Antoine added this line change 6 to 4
+        self.vg_init = torch.zeros(1,2).reshape(1,-1) # Antoine added this line change 6 to 2
+        self.xbar_init = torch.zeros(1,2).reshape(1,-1) # Antoine added this line change 6 to 2
 
 
         # set dimensions
@@ -70,7 +70,7 @@ class PerfBoostController(nn.Module):
             posdef_tol=posdef_tol, contraction_rate_lb=contraction_rate_lb
         ).to(device)
 
-        self.MLP = MLP(dim_out = self.dim_out)
+        self.MLP = MLP(8, dim_out=self.dim_out)
 
         # define the system dynamics without process noise
         self.noiseless_forward = noiseless_forward
