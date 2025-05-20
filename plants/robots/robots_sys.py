@@ -23,7 +23,9 @@ class RobotsSystem(torch.nn.Module):
 
         self.linear_plant = linear_plant
 
-
+    
+        self.k_distance  = 1
+        self.distance_to_neighbor = 1
 
         # check dimensions
         self.n_agents = n_agents
@@ -116,7 +118,10 @@ class RobotsSystem(torch.nn.Module):
 
         self.register_buffer('K_p', K_p)
         self.register_buffer('K_i', K_i)
-
+        # print("K_p")
+        # print(K_p)
+        # print("K_i")
+        # print(K_i)
 
 
         # Output the results
@@ -150,7 +155,7 @@ class RobotsSystem(torch.nn.Module):
         A = self.A_lin + self.h * A3
         return A    # shape = (batch_size, 4 * n_agents, 4 * n_agents)
 
-    def noiseless_forward(self, t, x: torch.Tensor,v:torch.Tensor, u: torch.Tensor, xbar: torch.Tensor):
+    def noiseless_forward(self, t, x: torch.Tensor,v:torch.Tensor, u: torch.Tensor, xbar: torch.Tensor, neighbor_pos: torch.Tensor):
         """
         forward of the plant without the process noise.
 
@@ -167,7 +172,7 @@ class RobotsSystem(torch.nn.Module):
         
         xbar = xbar.to(device) # Antoine added this line
         dxref = dxref.to(device) # Antoine added this line
-
+        dxref = torch.zeros_like(dxref)
         xbar = xbar[..., :self.in_dim]  # Select only the first 2 dimensions for xbar 
         # indices_x = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1])
         # e = (xbar+dxref) - x[:,:,[0, 1, 4, 5]]
@@ -177,8 +182,23 @@ class RobotsSystem(torch.nn.Module):
         # e = e.to(device)  # Antoine added this line
         v = v + e 
 
-        u = -F.linear(x,self.K_p) -F.linear(v,self.K_i)
-        
+        # --- Distance to neighbors term ---
+        # neighbor_pos: list of (batch, 1, 2)
+        p_i = x[..., :2]  # (batch, 1, 2)
+        dist_term = 0
+        if neighbor_pos is not None and len(neighbor_pos) > 0:
+            for p_j in neighbor_pos[-1]:
+                norm_ij = torch.norm(p_i - p_j, dim=-1, keepdim=True)  # (batch, 1, 1)
+                dist_term = dist_term + self.k_distance * (norm_ij - self.distance_to_neighbor) * (p_i - p_j)/ norm_ij
+            # dist_term shape: (batch, 1, 2)
+            dist_term = dist_term.expand(-1, -1, self.in_dim)
+        else:
+            dist_term = torch.zeros_like(dxref)
+
+        # u = -F.linear(x,self.K_p) -F.linear(v,self.K_i) + dist_term
+
+        u = -dist_term
+
         # indices_v = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[2, 3])
         # tanh_q = torch.tanh(x[:,:,[2, 3, 6, 7]])
         tanh_q = torch.tanh(x[:,:,[2, 3]])
@@ -196,7 +216,7 @@ class RobotsSystem(torch.nn.Module):
 
         return (f,v)    # shape = (batch_size, 1, state_dim)
 
-    def forward(self, t, x,v, u, w,xbar):
+    def forward(self, t, x,v, u, w, xbar, neighbor_pos=None):
         """
         forward of the plant with the process noise.
 
@@ -208,12 +228,10 @@ class RobotsSystem(torch.nn.Module):
         Returns:
             next state.
         """
-        # v = v.to(device) # Antoine added this line
-        # x = x.to(device) # Antoine added this line
-        f,v = self.noiseless_forward(t, x,v, u,xbar)
 
-        # f = f.to(device) # Antoine added this line
-        # w = w.to(device) # Antoine added this line
+        f,v = self.noiseless_forward(t, x,v, u, xbar, neighbor_pos=neighbor_pos)
+
+
         f = f + w.view(-1, 1, self.state_dim) 
 
         

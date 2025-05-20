@@ -64,6 +64,16 @@ def compute_distance_metric(x_log, data, n_agents, rt=False):
     # Return the average metric over all batches
     return sum(metrics) / len(metrics)
 
+def generate_indices(n_agents, state_dim_per_agent=4, selected_dims=[0, 1], for_xbar=False):
+        indices = []
+        start_index = state_dim_per_agent * n_agents if for_xbar else 0
+
+        for agent in range(n_agents):
+            base_index = start_index + agent * state_dim_per_agent
+            for dim in selected_dims:
+                indices.append(base_index + dim)
+        return indices
+
 class WrapLogger():
     def __init__(self, logger, verbose=True):
         self.can_log = (logger is not None)

@@ -89,12 +89,14 @@ class PerfBoostController(nn.Module):
 
         self.c_ren.x = self.c_ren.init_x    # reset the REN state to the initial value
 
-    def forward(self, input_t: torch.Tensor,vg:torch.Tensor,xbar:torch.Tensor,):
+    def forward(self, input_t: torch.Tensor, vg:torch.Tensor, xbar:torch.Tensor, neighbor_pos:torch.Tensor):
         """
         Forward pass of the controller.
 
         Args:
             input_t (torch.Tensor): Input with the size of (batch_size, 1, self.dim_in).
+            vg (torch.Tensor): Input with the size of (batch_size, 1, self.dim_in).
+            neighbor_pos (torch.Tensor): (x, y) positions of the other agents. (neigbhbor, batch_size, 1, 2)
             NOTE: when used in closed-loop, "input_t" is the measured states.
 
         Return:
@@ -108,7 +110,8 @@ class PerfBoostController(nn.Module):
             x=self.last_input,  # last input to the controller is the last state of the plant
             u=self.last_output, 
             v=self.last_vg,
-            xbar = self.last_xbar  # last output of the controller is the last input to the plant
+            xbar = self.last_xbar,  # last output of the controller is the last input to the plant
+            neighbor_pos=neighbor_pos
         )  # shape = (self.batch_size, 1, self.dim_in)
 
         # reconstruct the noise
