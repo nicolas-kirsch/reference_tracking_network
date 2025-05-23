@@ -2,6 +2,8 @@ import numpy as np
 from scipy.linalg import block_diag
 from scipy.signal import place_poles
 from config import device
+from scipy.linalg import solve_discrete_are
+
 
 import torch
 import torch.nn.functional as F
@@ -24,8 +26,8 @@ class RobotsSystem(torch.nn.Module):
         self.linear_plant = linear_plant
 
     
-        self.k_distance  = 1
-        self.distance_to_neighbor = 1
+        self.k_distance  = 10
+        self.distance_to_neighbor = 2
 
         # check dimensions
         self.n_agents = n_agents
@@ -34,6 +36,7 @@ class RobotsSystem(torch.nn.Module):
 
         # initial state
         x_init = torch.zeros((1,self.state_dim)) if x_init is None else x_init.reshape(1, -1) # shape = (1, state_dim)
+        # x_init = torch.full((1, self.state_dim), 1e-6) if x_init is None else x_init.reshape(1, -1)  # shape = (1, state_dim)
         self.register_buffer('x_init', x_init)
         # u_init = torch.zeros(1, int(self.x_init.shape[1]/2)) if u_init is None else u_init.reshape(1, -1)   # shape = (1, in_dim)
         u_init = torch.zeros((1,self.in_dim)) if u_init is None else u_init.reshape(1, -1)
@@ -102,13 +105,19 @@ class RobotsSystem(torch.nn.Module):
 
 
         # Choose desired poles for the augmented system
-        desired_poles = np.exp(np.array([-3, -3.05, -4, -4.05, -2, -2.05]) * self.h)
+        desired_poles = np.exp(np.array([-1.0, -1.1, -1.2, -1.6, -0.1, -0.1]) * self.h)
+
+        # desired_poles = np.exp(np.array([-3, -3.05, -4, -4.05, -2, -2.05]) * self.h) # use these gains
         #desired_poles = np.exp(np.array([-3, -3.05, -5, -5.05, -7, -7.05]) * self.h)
 
         # Compute the state feedback gains (K) and integral gains (K_I) using pole placement
         # Using scipy's place_poles function
         place_obj = place_poles(A_aug, B_aug, desired_poles)
         K_aug = place_obj.gain_matrix
+        # Q = np.eye(6) * 1.0 
+        # R = np.eye(2) * 1e-6 
+        # P = solve_discrete_are(A_aug, B_aug, Q, R)
+        # K_aug = np.linalg.inv(B_aug.T @ P @ B_aug + R) @ (B_aug.T @ P @ A_aug)
 
         # Extract state feedback gains and integral gains
         K_p = K_aug[:, :4].astype(np.float32)  # State feedback gains
@@ -161,10 +170,15 @@ class RobotsSystem(torch.nn.Module):
 
         Args:
             - x (torch.Tensor): plant's state at t. shape = (batch_size, 1, state_dim)
+            - v (torch.Tensor): integral state at t. shape = (batch_size, 1, in_dim)
             - u (torch.Tensor): plant's input at t. shape = (batch_size, 1, in_dim)
+            - xbar (torch.Tensor): reference state at t. shape = (batch_size, 1, state_dim)
+            - neighbor_pos (torch.Tensor): positions of the other agents. shape = (batch_size, n_agents-1, state_dim (only x, y))
+            
 
         Returns:
-            next state of the noise-free dynamics.
+            next state of the noise-free dynamics. f = (batch_size, 1, state_dim)
+            next integral state. v = (batch_size, 1, in_dim)
         """
 
         x = x.view(-1, 1, self.state_dim) 
@@ -172,12 +186,13 @@ class RobotsSystem(torch.nn.Module):
         
         xbar = xbar.to(device) # Antoine added this line
         dxref = dxref.to(device) # Antoine added this line
+
         dxref = torch.zeros_like(dxref)
         xbar = xbar[..., :self.in_dim]  # Select only the first 2 dimensions for xbar 
         # indices_x = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1])
         # e = (xbar+dxref) - x[:,:,[0, 1, 4, 5]]
         e = (xbar+dxref) - x[:,:,[0, 1]]
-
+        e_state = F.pad(e, (0, 2))  # Pads 2 zeros at the end of the last dimension
         v = v.to(device)  # Antoine added this line
         # e = e.to(device)  # Antoine added this line
         v = v + e 
@@ -187,15 +202,17 @@ class RobotsSystem(torch.nn.Module):
         p_i = x[..., :2]  # (batch, 1, 2)
         dist_term = 0
         if neighbor_pos is not None and len(neighbor_pos) > 0:
-            for p_j in neighbor_pos[-1]:
+            for j in range(neighbor_pos.shape[1]):
+                p_j = neighbor_pos[:, j, :]
                 norm_ij = torch.norm(p_i - p_j, dim=-1, keepdim=True)  # (batch, 1, 1)
-                dist_term = dist_term + self.k_distance * (norm_ij - self.distance_to_neighbor) * (p_i - p_j)/ norm_ij
+                dist_term = dist_term + self.k_distance * (norm_ij - self.distance_to_neighbor) * (p_i - p_j) / norm_ij
             # dist_term shape: (batch, 1, 2)
             dist_term = dist_term.expand(-1, -1, self.in_dim)
         else:
             dist_term = torch.zeros_like(dxref)
 
-        # u = -F.linear(x,self.K_p) -F.linear(v,self.K_i) + dist_term
+        # u = -F.linear(x,self.K_p) -F.linear(v,self.K_i) - dist_term # The original line
+        # u = F.linear(e_state, self.K_p) - F.linear(v, self.K_i) - dist_term # PID
 
         u = -dist_term
 
