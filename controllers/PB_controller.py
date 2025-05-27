@@ -113,7 +113,7 @@ class PerfBoostController(nn.Module):
             xbar = self.last_xbar,  # last output of the controller is the last input to the plant
             neighbor_pos=neighbor_pos
         )  # shape = (self.batch_size, 1, self.dim_in)
-
+        # u_noiseless = u_noiseless.permute(1, 0, 2)  # Reshape to (batch, 1, 4)
         # reconstruct the noise
         w_ = input_t - u_noiseless # shape = (self.batch_size, 1, self.dim_in)
 

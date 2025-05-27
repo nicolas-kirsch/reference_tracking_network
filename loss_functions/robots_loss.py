@@ -6,10 +6,10 @@ from config import device
 class RobotsLoss(LQLossFH):
     def __init__(
         self, xbar, Q,Qs, alpha_u=1,
-        alpha_col=None, alpha_obst=None,
+        alpha_col=None, alpha_obst=None, alpha_formation=None,
         loss_bound=None, sat_bound=None,
         n_agents=2, min_dist=0.5,
-        obstacle_centers=None, obstacle_covs=None
+        obstacle_centers=None, obstacle_covs=None, desired_distance=2.0 
     ):
         super().__init__(Q=Q, R=alpha_u, loss_bound=loss_bound, sat_bound=sat_bound, xbar=None)
         self.Qs = Qs
@@ -17,6 +17,7 @@ class RobotsLoss(LQLossFH):
         self.n_agents = n_agents
         self.alpha_col, self.alpha_obst, self.min_dist = alpha_col, alpha_obst, min_dist
         assert (self.alpha_col is None and self.min_dist is None) or not (self.alpha_col is None or self.min_dist is None)
+        self.alpha_formation, self.desired_distance = alpha_formation, desired_distance
         if self.alpha_col is not None:
             assert self.n_agents is not None
         # define obstacles
@@ -54,15 +55,18 @@ class RobotsLoss(LQLossFH):
         x_batch = xs.reshape(*xs.shape, 1)
         u_batch = us.reshape(*us.shape, 1)
         e_batch = es.reshape(*es.shape, 1)
-        
+        # print(f"xs.requires_grad: {xs.requires_grad}")
+        # print(f"us.requires_grad: {us.requires_grad}")
+        # print(f"es.requires_grad: {es.requires_grad}")
+
         """x_bar = self.xbar.reshape(*self.xbar.shape,1)
         # loss states = 1/T sum_{t=1}^T (x_t-xbar)^T Q (x_t-xbar)
         if self.xbar is not None:
             x_batch_centered = x_batch - x_bar
         else:
             x_batch_centered = x_batch"""
-        # speed = x_batch[:,:,[2,3,6,7]]
-        speed = x_batch[:,:,[2,3]]
+        speed = x_batch[:,:,[2,3,6,7]]
+        # speed = x_batch[:,:,[2,3]]
 
         xTQx = torch.matmul(
             torch.matmul(e_batch.transpose(-1, -2), self.Q),
@@ -92,8 +96,14 @@ class RobotsLoss(LQLossFH):
             loss_obst = 0
         else:
             loss_obst = self.alpha_obst * self.f_loss_obst(x_batch) # shape = (S, 1, 1)
+        # formation loss
+        if self.alpha_formation is None:
+            loss_form = 0
+        else:
+            loss_form = self.alpha_formation * self.f_loss_formation(x_batch)
         # sum up all losses
-        loss_val = loss_x + loss_u + loss_ca + loss_obst + loss_speed           # shape = (S, 1, 1)
+        loss_val = loss_x + loss_u + loss_ca + loss_obst + loss_speed + loss_form  
+        # print(f"loss_val.requires_grad: {loss_val.requires_grad}")        # shape = (S, 1, 1)
         # bound
         if self.sat_bound is not None:
             loss_val = torch.tanh(loss_val/self.sat_bound)  # shape = (S, 1, 1)
@@ -102,6 +112,7 @@ class RobotsLoss(LQLossFH):
             loss_ca = torch.tanh(loss_ca/self.sat_bound)
             loss_obst = torch.tanh(loss_obst/self.sat_bound)
             loss_speed = torch.tanh(loss_speed/self.sat_bound)
+            loss_form = torch.tanh(loss_form/self.sat_bound)
         if self.loss_bound is not None:
             loss_val = self.loss_bound * loss_val          # shape = (S, 1, 1)
             loss_x = self.loss_bound * loss_x
@@ -109,6 +120,7 @@ class RobotsLoss(LQLossFH):
             loss_ca = self.loss_bound * loss_ca
             loss_obst = self.loss_bound * loss_obst
             loss_speed = self.loss_bound * loss_speed
+            loss_form = self.loss_bound * loss_form
 
         # average over the samples
         loss_val = torch.sum(loss_val, 0)/xs.shape[0]       # shape = (1, 1)
@@ -117,7 +129,45 @@ class RobotsLoss(LQLossFH):
         loss_ca = torch.sum(loss_ca, 0)/xs.shape[0]
         loss_obst = torch.sum(loss_obst, 0)/xs.shape[0]
         loss_speed = torch.sum(loss_speed, 0)/xs.shape[0]
-        return loss_val, loss_obst, loss_x, loss_u, loss_ca, loss_speed
+        loss_form = torch.sum(loss_form, 0)/xs.shape[0]
+        return loss_val, loss_obst, loss_x, loss_u, loss_ca, loss_speed, loss_form
+
+
+    ############### Loss functions ####################
+    def f_loss_formation(self, x_batched):
+        """
+        Formation loss.
+        Penalizes deviations from the desired distance between consecutive agents.
+        Args:
+            - x_batched: tensor of shape (S, T, state_dim* n_agents = 4*n_agents, 1)
+                concatenated states of all agents on the third dimension.
+
+        Return:
+            - formation loss of shape (1, 1).
+        """
+        qx = x_batched[:, :, 0::4, :].squeeze(-1)  # x of all agents. shape = (S, T, n_agents)
+        qy = x_batched[:, :, 1::4, :].squeeze(-1)  # y of all agents. shape = (S, T, n_agents)
+
+        loss = torch.zeros(x_batched.shape[0], device=x_batched.device)  # Initialize loss with shape (S,)
+
+        # Loop through consecutive agent pairs
+        for i in range(self.n_agents - 1):
+            # Extract positions of agent i and agent i+1
+            x1, y1 = qx[:, :, i], qy[:, :, i]
+            x2, y2 = qx[:, :, i+1], qy[:, :, i+1]
+
+            # Calculate distance between agent i and agent i+1
+            distance = torch.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+
+            # Calculate distance error
+            distance_error = torch.abs(distance - self.desired_distance)
+
+            # Accumulate the loss (e.g., squared error)
+            loss = loss +  torch.mean(distance_error**2, dim=1)  # Mean over time and samples
+
+        return loss.reshape(-1, 1, 1)  # Reshape to (S, 1, 1)
+
+
 
     def f_loss_obst(self, x_batched):
         """
@@ -194,7 +244,7 @@ class RobotsLoss(LQLossFH):
         # return n_coll/2, percentage                    # each collision is counted twice
         return num_rollouts_with_collisions, percentage
     
-    def count_obstacle_collisions(self, x_batch, dataset, threshold=1.0):
+    def count_obstacle_collisions(self, x_batch, dataset, threshold=1.1):
         """
         Count the number of collisions between agents and obstacles and identify
         the rollouts that caused collisions.

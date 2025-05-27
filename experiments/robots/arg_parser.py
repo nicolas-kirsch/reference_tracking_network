@@ -35,6 +35,8 @@ def argument_parser():
     parser.add_argument('--alpha-u', type=float, default=0.1/400, help='Weight of the loss due to control input "u". Default is 0.1/400.')  #TODO: 400 is output_amplification^2
     parser.add_argument('--alpha-col', type=float, default=3000, help='Weight of the collision avoidance loss. Default is 100 if "col-av" is True, else None.')
     parser.add_argument('--alpha-obst', type=float, default=5e3, help='Weight of the obstacle avoidance loss. Default is 5e3 if "obst-av" is True, else None.')
+    parser.add_argument('--alpha-formation', type=float, default=1.0, help='Weight of the formation loss, the controller will try to maintain a formation between the agents. Default is 100.0.') 
+    parser.add_argument('--distance-agents', type=float, default=2.0, help='Distance between agents in the formation. Default is 2.0.')  #TODO: add help
     parser.add_argument('--min-dist', type=float, default=1.0, help='TODO. Default is 1.0 if "col-av" is True, else None.')  #TODO: add help
 
     # optimizer

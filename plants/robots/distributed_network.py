@@ -17,6 +17,8 @@ class Network(torch.nn.Module):
         device: torch.device
         Returns: x_log, u_log, v_log as tensors
         """
+        self.reset()  # Reset controllers before rollout
+        
         n_agents = self.n_agents
         batch_size = data_list[0].shape[0]
         T = data_list[0].shape[1]
@@ -38,7 +40,8 @@ class Network(torch.nn.Module):
         x_log = []
         u_log = []
         v_log = []
-
+        e_log = []
+        # with torch.no_grad():
         for t in range(T):
             # Positions: (batch, n_agents, 1, 2)
             positions = x[..., :2]  # (batch, n_agents, 1, 2)
@@ -61,21 +64,25 @@ class Network(torch.nn.Module):
             # Step each system
             x_next = torch.zeros_like(x)
             v_next = torch.zeros_like(v)
+            e_next = torch.zeros_like(v)
             for i in range(n_agents):
-                xbar_i = data_list[i][:, t:t+1, 4:].to(device)
+                xbar_i = data_list[i][:, t:t+1, 4:].to(device)  # (1, 1, ref_dim = 4 (x, y, vx, vy))
                 w_i = data_list[i][:, t:t+1, :4].to(device)
                 neighbor_pos = torch.cat([positions[:, j] for j in range(n_agents) if j != i], dim=1) # (batch, n_agents-1, 1, 2)
                 x_next[:, i], v_next[:, i] = self.systems[i].forward(
                     t, x[:, i], v[:, i], u_step[:, i], w=w_i, xbar=xbar_i, neighbor_pos=neighbor_pos
-                ) 
+                ) # Shape x_next: (1, n_agents, 1, state_dim = 4), v_next: (1, n_agents, 1, control_dim = 2)
+                e_next[:, i] = xbar_i[:,:,:2] - x[:, i, :,:2]
 
             x = x_next
             v = v_next
             u = u_step
+            e = e_next
 
             x_log.append(x)
             u_log.append(u)
             v_log.append(v)
+            e_log.append(e)
             assert not torch.isnan(x).any(), f"NaN in x at step {t}"
             assert not torch.isnan(u).any(), f"NaN in u at step {t}"
             assert not torch.isnan(v).any(), f"NaN in v at step {t}"    
@@ -89,13 +96,29 @@ class Network(torch.nn.Module):
         x_log = torch.stack(x_log, dim=2)
         u_log = torch.stack(u_log, dim=2)
         v_log = torch.stack(v_log, dim=2)
+        e_log = torch.stack(e_log, dim=2)
 
         x_log = x_log.squeeze(3)  # shape: (batch, n_agents, T, state_dim)
         u_log = u_log.squeeze(3)  # shape: (batch, n_agents, T, control_dim)
         v_log = v_log.squeeze(3)  # shape: (batch, n_agents, T, control_dim)
+        e_log = e_log.squeeze(3)  # shape: (batch, n_agents, T, control_dim)
 
-        return x_log, u_log, v_log
+        x_log = x_log.permute(0, 2, 1, 3)  # (batch, T, n_agents, state_dim)
+        x_log = x_log.reshape(x_log.shape[0], x_log.shape[1], -1)  # (batch, T, n_agents * state_dim)
+        u_log = u_log.permute(0, 2, 1, 3)  # (batch, T, n_agents, control_dim)
+        u_log = u_log.reshape(u_log.shape[0], u_log.shape[1], -1)  # (batch, T, n_agents * control_dim)
+        v_log = v_log.permute(0, 2, 1, 3)  # (batch, T, n_agents, control_dim)
+        v_log = v_log.reshape(v_log.shape[0], v_log.shape[1], -1)  # (batch, T, n_agents * control_dim)
+        e_log = e_log.permute(0, 2, 1, 3)  # (batch, T, n_agents, control_dim)
+        e_log = e_log.reshape(e_log.shape[0], e_log.shape[1], -1)  # (batch, T, n_agents * control_dim)
+        return x_log, u_log, v_log, e_log
 
+    def reset(self):
+        """
+        Reset the state of each system and controller.
+        """
+        for i in range(self.n_agents):
+            self.controllers[i].reset()
 
     # def rollout(self, data_list, device):
     #     """
