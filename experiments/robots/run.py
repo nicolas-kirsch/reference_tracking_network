@@ -99,12 +99,12 @@ x_init_2[:, :2] = x_init_2[:, :2] + 5e-6 # Add to x and y
 
 robot1 = RobotsSystem(
     x_init=x_init_1,
-    u_init=plant_input_init, linear_plant=args.linearize_plant, k=args.spring_const, n_agents=1, leader=False , distance_to_neighbor=args.distance_agents
+    u_init=plant_input_init, linear_plant=args.linearize_plant, k=args.spring_const, n_agents=1, leader=True , distance_to_neighbor=args.distance_agents
 ).to(device)
 
 robot2 = RobotsSystem(
     x_init=x_init_2,
-    u_init=plant_input_init, linear_plant=args.linearize_plant, k=args.spring_const, n_agents=1, leader=True , distance_to_neighbor=args.distance_agents
+    u_init=plant_input_init, linear_plant=args.linearize_plant, k=args.spring_const, n_agents=1, leader=False , distance_to_neighbor=args.distance_agents
 ).to(device)
 
 
@@ -207,7 +207,7 @@ for epoch in range(1+args.epochs):
         optimizer1.zero_grad()
         optimizer2.zero_grad()
         # simulate over horizon steps
-        x_log, u_log, v_log, e_log = network_robots.rollout(data_list=[train_data_batch_robot1, train_data_batch_robot2], device=device)
+        x_log, u_log, v_log, e_log = network_robots.rollout(data_list=[train_data_batch_robot1, train_data_batch_robot2], device=device, train=True)
 
         # loss of this rollout
         loss1 = loss_fn.forward(x_log, u_log,e_log)[0]

@@ -11,7 +11,7 @@ class Network(torch.nn.Module):
         self.controllers = controllers
         self.n_agents = len(systems)
 
-    def rollout(self, data_list, device):
+    def rollout(self, data_list, device, train=False):
         """
         data_list: list of (batch, T, state_dim+ref_dim) tensors, one per robot
         device: torch.device
@@ -86,11 +86,14 @@ class Network(torch.nn.Module):
             assert not torch.isnan(x).any(), f"NaN in x at step {t}"
             assert not torch.isnan(u).any(), f"NaN in u at step {t}"
             assert not torch.isnan(v).any(), f"NaN in v at step {t}"    
+        self.reset()  # Reset controllers after rollout
 
-        # # Stack logs: (batch, T, state_dim) for each agent
-        # x_log = [torch.cat(x_log[i], dim=1) for i in range(n_agents)]  # list of (batch, T, state_dim)
-        # u_log = [torch.cat(u_log[i], dim=1) for i in range(n_agents)]
-        # v_log = [torch.cat(v_log[i], dim=1) for i in range(n_agents)]
+        if not train:
+            # If not training, detach logs to avoid unnecessary gradients
+            x_log = [x.detach() for x in x_log]
+            u_log = [u.detach() for u in u_log]
+            v_log = [v.detach() for v in v_log]
+            e_log = [e.detach() for e in e_log]
 
         # Stack along agent dimension: (batch, n_agents, T, 1, state_dim)
         x_log = torch.stack(x_log, dim=2)

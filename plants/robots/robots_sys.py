@@ -194,15 +194,15 @@ class RobotsSystem(torch.nn.Module):
             next state of the noise-free dynamics. f = (batch_size, 1, state_dim)
             next integral state. v = (batch_size, 1, in_dim)
         """
-        x = x.clone()
-        v = v.clone()
+        # x = x.clone()
+        # v = v.clone()
         x = x.view(-1, 1, self.state_dim) 
         dxref = u.view(-1, 1, self.in_dim)
         
         xbar = xbar.to(device) # Antoine added this line
         dxref = dxref.to(device) # Antoine added this line
 
-        dxref = torch.zeros_like(dxref)
+        # dxref = torch.zeros_like(dxref)
         xbar = xbar[..., :self.in_dim]  # Select only the first 2 dimensions for xbar 
         # indices_x = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1])
         # e = (xbar+dxref) - x[:,:,[0, 1, 4, 5]]
@@ -267,8 +267,8 @@ class RobotsSystem(torch.nn.Module):
         Returns:
             next state.
         """
-        x = x.clone()
-        v = v.clone()
+        # x = x.clone()
+        # v = v.clone()
         f,v = self.noiseless_forward(t, x,v, u, xbar, neighbor_pos=neighbor_pos)
 
 
