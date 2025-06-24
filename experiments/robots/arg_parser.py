@@ -35,8 +35,8 @@ def argument_parser():
     parser.add_argument('--alpha-u', type=float, default=0.1/400, help='Weight of the loss due to control input "u". Default is 0.1/400.')  #TODO: 400 is output_amplification^2
     parser.add_argument('--alpha-col', type=float, default=3000, help='Weight of the collision avoidance loss. Default is 100 if "col-av" is True, else None.')
     parser.add_argument('--alpha-obst', type=float, default=5e3, help='Weight of the obstacle avoidance loss. Default is 5e3 if "obst-av" is True, else None.')
-    parser.add_argument('--alpha-formation', type=float, default=1.0, help='Weight of the formation loss, the controller will try to maintain a formation between the agents. Default is 100.0.') 
-    parser.add_argument('--distance-agents', type=float, default=2.0, help='Distance between agents in the formation. Default is 2.0.')  #TODO: add help
+    parser.add_argument('--alpha-formation', type=float, default=10000, help='Weight of the formation loss, the controller will try to maintain a formation between the agents. Default is 100.0.') 
+    parser.add_argument('--distance-agents', type=float, default=2.5, help='Distance between agents in the formation. Default is 2.0.')  #TODO: add help
     parser.add_argument('--min-dist', type=float, default=1.0, help='TODO. Default is 1.0 if "col-av" is True, else None.')  #TODO: add help
 
     # optimizer
@@ -47,7 +47,7 @@ def argument_parser():
     parser.add_argument('--return-best', type=bool, default=True, help='Return the best model on the validation data among all logged iterations. The train data can be used instead of validation data. The Default is True.')
 
     # Obstacles
-    parser.add_argument('--obstacle-shape', type=int, default=7, help='Shape of the obstacles. Default is 6 -> Mountain range.')
+    parser.add_argument('--obstacle-shape', type=int, default=8, help='Shape of the obstacles. Default is 6 -> Mountain range.')
     parser.add_argument('--obstacle-centers', type=float, default=None, help='Centers of the obstacles. Default is None.')
     parser.add_argument('--obstacle-covs', type=float, default=None, help='Covariances of the obstacles. Default is None.')
     
@@ -56,8 +56,9 @@ def argument_parser():
     parser.add_argument('--record', type=str, default='none', help='Record the data for the sensitivity study. Default is none.')
     parser.add_argument('--filename', type=str, default='sensitivity_study', help='Filename for the recorded data. Default is sensitivity_study.')
     parser.add_argument('--no-save-plot', action='store_true', help='Disable saving plots. Default is False (plots are saved).')  
-      
-    # Roudtrip
+    parser.add_argument('--plot-at-best-epoch', type=bool, default=True, help='Plot the results at the best epoch. Default is False (plots are saved at the last epoch).')
+    
+    # Roundtrip
     parser.add_argument('--rt-epochs', type=float, default=0.0, help='Percentage of epochs to be used for learning to come back to x0, Default is 0.0.')
     parser.add_argument('--use-previous-params', type=bool, default=False, help='Use the best ctrl param of the previous ctrl. Default is False.')
 
@@ -65,11 +66,11 @@ def argument_parser():
     parser.add_argument('--model-path', type=str, default=None, help='Path to the saved model file')
 
     # Save results path
-    parser.add_argument('--save-path', type=str, default='saved_results_rt', help='Path to save the results. Default is "saved_results".')
+    parser.add_argument('--save-path', type=str, default='saved_results_alpha_formation', help='Path to save the results. Default is "saved_results".')
 
     # Training range x_interval tuple
-    parser.add_argument('--x-interval', type=ast.literal_eval, default=(-3, 5), help='Interval for x. Default is (-3, 7).')
-    parser.add_argument('--y-interval', type=ast.literal_eval, default=(4, 4.1), help='Interval for y. Default is (4, 4.1).')
+    parser.add_argument('--x-interval', type=ast.literal_eval, default=(0.75, 3.25), help='Interval for x. Default is (-3, 7), or (-1, 3)')
+    parser.add_argument('--y-interval', type=ast.literal_eval, default=(6, 6.1), help='Interval for y. Default is (4, 4.1).')
 
     # TODO: add the following
     # parser.add_argument('--patience-epoch', type=int, default=None, help='Patience epochs for no progress. Default is None which sets it to 0.2 * total_epochs.')

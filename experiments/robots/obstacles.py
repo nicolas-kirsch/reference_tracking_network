@@ -209,12 +209,46 @@ obstacles = {
         torch.tensor([[1, 2]], device=device),
         torch.tensor([[3, 2]], device=device),
         torch.tensor([[5, 2]], device=device),
-        torch.tensor([[7.0, 2]], device=device),
+        torch.tensor([[7, 2]], device=device),
     ],
     "covs": [
         torch.tensor([[0.1, 0.1]], device=device)
     ]
-    }
+    },
+    8: {
+    "centers": [
+        torch.tensor([[-3.0, 2]], device=device),
+        torch.tensor([[-0.5, 2]], device=device),
+        torch.tensor([[2, 2]], device=device),
+        torch.tensor([[4.5, 2]], device=device),
+        torch.tensor([[7, 2]], device=device),
+    ],
+    "covs": [
+        torch.tensor([[0.1, 0.1]], device=device)
+    ]
+    },
+    9: {
+    "centers": [
+        torch.tensor([[-3.0, 2]], device=device),
+        torch.tensor([[-0.5, 2]], device=device),
+        torch.tensor([[4.5, 2]], device=device),
+        torch.tensor([[7, 2]], device=device),
+    ],
+    "covs": [
+        torch.tensor([[0.1, 0.1]], device=device)
+    ]
+    },
+    10: {
+    "centers": [
+        # torch.tensor([[-4.0, 2]], device=device),
+        torch.tensor([[-1.0, 2]], device=device),
+        torch.tensor([[2, 2]], device=device),
+        torch.tensor([[5, 2]], device=device),
+        # torch.tensor([[8, 2]], device=device),
+    ],
+    "covs": [
+        torch.tensor([[0.1, 0.1]], device=device)
+    ]}
 }
 
 

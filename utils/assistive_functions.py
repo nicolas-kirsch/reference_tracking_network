@@ -74,6 +74,39 @@ def generate_indices(n_agents, state_dim_per_agent=4, selected_dims=[0, 1], for_
                 indices.append(base_index + dim)
         return indices
 
+def calculate_average_distance(x_log, t):
+    """
+    Calculates the average distance between two agents for the first t seconds.
+    Handles cases where x_log has shape (batch_size, T, state_dim) or (T, state_dim).
+
+    Args:
+        x_log (torch.Tensor): Tensor of shape (batch_size, T, state_dim) or (T, state_dim)
+                               containing the state trajectories of the agents.
+                               It is assumed that the first 4 dimensions are for agent 1 (x, y, vx, vy) and the next 4 for agent 2.
+        t (int): The number of time steps (seconds) to consider for the average distance calculation.
+
+    Returns:
+        float: The average distance between the two agents for the first t seconds.
+    """
+    if len(x_log.shape) == 3:
+        # x_log has shape (batch_size, T, state_dim)
+        x1 = x_log[:, :t, 0:2]  # Agent 1 positions (x, y)
+        x2 = x_log[:, :t, 4:6]  # Agent 2 positions (x, y)
+    elif len(x_log.shape) == 2:
+        # x_log has shape (T, state_dim)
+        x1 = x_log[:t, 0:2].unsqueeze(0)  # Agent 1 positions (x, y) - add batch dimension
+        x2 = x_log[:t, 4:6].unsqueeze(0)  # Agent 2 positions (x, y) - add batch dimension
+    else:
+        raise ValueError("x_log must have 2 or 3 dimensions")
+
+    # Calculate the distances between the agents at each time step
+    distances = torch.sqrt(torch.sum((x1 - x2)**2, dim=-1))  # (batch_size, t)
+
+    # Calculate the average distance across all batches and time steps
+    average_distance = torch.mean(distances).item()
+
+    return average_distance
+
 class WrapLogger():
     def __init__(self, logger, verbose=True):
         self.can_log = (logger is not None)

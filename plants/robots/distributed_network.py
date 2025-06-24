@@ -1,4 +1,5 @@
 import torch
+from config import device
 
 class Network(torch.nn.Module):
     def __init__(self, systems, controllers):
@@ -10,6 +11,73 @@ class Network(torch.nn.Module):
         self.systems = systems
         self.controllers = controllers
         self.n_agents = len(systems)
+
+
+    # def rollout(self, controller, data, train=False):
+    #     """
+    #     rollout REN for rollouts of the process noise for distributed control.
+
+    #     Args:
+    #         - data: list of (batch, T, state_dim+ref_dim = 8) tensors, one per robot
+    #             (batch_size, T, state_dim).
+
+    #     Return:
+    #         - x_log of shape = (batch_size, T, state_dim* n_agents)
+    #         - e_log of shape = (batch_size, T, in_dim* n_agents)
+    #         - u_log of shape = (batch_size, T, in_dim* n_agents)
+            
+    #     """
+
+    #     # init
+
+    #     controller.reset()
+
+
+    #     n_agents = self.n_agents
+    #     batch_size = data[0].shape[0]
+    #     T = data[0].shape[1]
+    #     state_dim = self.systems[0].x_init.shape[-1]
+    #     control_dim = self.systems[0].u_init.shape[-1]
+
+    #     # Initialize states, integrals, controls for all robots
+    #     x = torch.stack([self.systems[i].x_init.detach().clone().repeat(batch_size, 1, 1).to(device) for i in range(n_agents)], dim=1) # shape = (batch_size, n_agents, 1, state_dim)
+    #     u = torch.stack([self.systems[i].u_init.detach().clone().repeat(batch_size, 1, 1).to(device) for i in range(n_agents)], dim=1) # shape = (batch_size, n_agents, 1, in_dim)
+    #     v = torch.zeros(u.shape) # shape = (batch_size, n_agents, 1, in_dim)
+    #     w = torch.stack([data[i][:,:,:4] for i in range(n_agents)], dim=1) # shape = (batch_size, n_agents, T, 4)
+    #     xbar = torch.stack([data[i][:,:,4:] for i in range(n_agents)], dim=1) # shape = (batch_size, n_agents, T, 4)
+
+
+    #     v = v.to(device) # Antoine added this line
+    #     x = x.to(device) # Antoine added this line
+    #     w = w.to(device) # Antoine added this line
+
+    #     # Simulate
+    #     for t in range(T):
+    #         for i in range(n_agents):
+    #         x,v = self.forward(t=t, x=x, u=u, v=v, w=w[:, t:t+1, :],xbar= xbar[:, t:t+1, :])    # shape = (batch_size, 1, state_dim)
+
+    #         #u_k = c(x_k,xbar_k)
+    #         u = controller(x,v,xbar[:, t:t+1, :])                                       # shape = (batch_size, 1, in_dim)
+
+    #         xbar = xbar.to(device) # Antoine added this line
+    #         x = x.to(device) # Antoine added this line
+    #         if t == 0:
+    #             x_log, u_log, v_log = x, u,v
+    #             e_log = xbar[:, t:t+1, :2] - x[:,:,[0, 1]]
+
+
+    #         else:
+    #             x_log = torch.cat((x_log, x), 1)
+    #             u_log = torch.cat((u_log, u), 1)
+    #             v_log = torch.cat((v_log, v), 1)
+    #             e_log = torch.cat((e_log, xbar[:, t:t+1, :2] - x[:,:,[0, 1]]), 1)
+
+    #     controller.reset()
+    #     if not train:
+    #         x_log, u_log = x_log.detach(), u_log.detach()
+
+    #     self.v_log = v_log.detach()
+    #     return x_log, e_log, u_log
 
     def rollout(self, data_list, device, train=False):
         """
@@ -45,20 +113,27 @@ class Network(torch.nn.Module):
         for t in range(T):
             # Positions: (batch, n_agents, 1, 2)
             positions = x[..., :2]  # (batch, n_agents, 1, 2)
-
+            velocities = x[..., 2:]  # (batch, n_agents, 1, 2)
             # Compute control for each agent
             u_step = torch.zeros(batch_size, n_agents, 1, control_dim, device=device)
             for i in range(n_agents):
                 # Reference for agent i at this step
                 xbar_i = data_list[i][:, t:t+1, 4:].to(device)  # (batch, 1, ref_dim)
-                w_i = data_list[i][:, t:t+1, :4].to(device)     # (batch, 1, 4)
+                w_i = data_list[i][:, t:t+1, :4].clone().to(device)  # Create a copy
+                # print(f"Loop 1, Agent {i}: w_i = {w_i}")  # Print w_i
 
                 # Neighbor positions: (batch, n_agents-1, 1, 2)
                 neighbor_pos = torch.cat([positions[:, j] for j in range(n_agents) if j != i], dim=1)  # (batch, n_agents-1, 1, 2)
-
+                neighbor_vel = torch.cat([velocities[:, j] for j in range(n_agents) if j != i], dim=1)  # (batch, n_agents-1, 1, 2)
                 # Controller computes its control
+                # Get the other agent's control
+                if i == 0:
+                    u_neighbor = u_step[:, 1:2].clone()  # Get agent 1's control
+                else:  # i == 1
+                    u_neighbor = u_step[:, 0:1].clone()  # Get agent 0's control
+                u_neighbor = u_neighbor.squeeze(2)  # Remove the time dimension, shape: (batch, 1, control_dim)
                 u_step[:, i] = self.controllers[i](
-                    x[:, i], v[:, i], xbar=xbar_i, neighbor_pos=neighbor_pos
+                    x[:, i], v[:, i], xbar=xbar_i, neighbor_pos=neighbor_pos, neighbor_vel=neighbor_vel, u_neighbor = u_neighbor
                 )
 
             # Step each system
@@ -67,7 +142,9 @@ class Network(torch.nn.Module):
             e_next = torch.zeros_like(v)
             for i in range(n_agents):
                 xbar_i = data_list[i][:, t:t+1, 4:].to(device)  # (1, 1, ref_dim = 4 (x, y, vx, vy))
-                w_i = data_list[i][:, t:t+1, :4].to(device)
+                w_i = data_list[i][:, t:t+1, :4].clone().to(device)  # Create a copy
+                # print(f"Loop 2, Agent {i}: w_i = {w_i}")  # Print w_i
+
                 neighbor_pos = torch.cat([positions[:, j] for j in range(n_agents) if j != i], dim=1) # (batch, n_agents-1, 1, 2)
                 x_next[:, i], v_next[:, i] = self.systems[i].forward(
                     t, x[:, i], v[:, i], u_step[:, i], w=w_i, xbar=xbar_i, neighbor_pos=neighbor_pos

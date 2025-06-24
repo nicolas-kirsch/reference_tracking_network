@@ -66,6 +66,7 @@ class RobotsLoss(LQLossFH):
         else:
             x_batch_centered = x_batch"""
         speed = x_batch[:,:,[2,3,6,7]]
+        # print(speed[0,-1,:])
         # speed = x_batch[:,:,[2,3]]
 
         xTQx = torch.matmul(
@@ -130,43 +131,90 @@ class RobotsLoss(LQLossFH):
         loss_obst = torch.sum(loss_obst, 0)/xs.shape[0]
         loss_speed = torch.sum(loss_speed, 0)/xs.shape[0]
         loss_form = torch.sum(loss_form, 0)/xs.shape[0]
+        # print(f"loss_x: {loss_x}")
+        # print(f"loss_u: {loss_u}")
+        # print(f"loss_ca: {loss_ca}")
+        # print(f"loss_obst: {loss_obst}")
+        # print(f"loss_speed: {loss_speed}")
+        # print(f"loss_form: {loss_form}")
+        # print(f"loss_val: {loss_val}")
         return loss_val, loss_obst, loss_x, loss_u, loss_ca, loss_speed, loss_form
 
 
     ############### Loss functions ####################
-    def f_loss_formation(self, x_batched):
+    def f_loss_formation(self, x_batch, eps=0.1):
         """
         Formation loss.
-        Penalizes deviations from the desired distance between consecutive agents.
+
         Args:
-            - x_batched: tensor of shape (S, T, state_dim* n_agents = 4*n_agents, 1)
+            - x_batched: tensor of shape (S, T, state_dim, 1)
                 concatenated states of all agents on the third dimension.
 
         Return:
-            - formation loss of shape (1, 1).
+            - formation loss of shape (S, 1, 1).
         """
-        qx = x_batched[:, :, 0::4, :].squeeze(-1)  # x of all agents. shape = (S, T, n_agents)
-        qy = x_batched[:, :, 1::4, :].squeeze(-1)  # y of all agents. shape = (S, T, n_agents)
+        min_sec_dist = self.desired_distance - eps
+        max_sec_dist = self.desired_distance + eps
+        dist_min_sq = min_sec_dist ** 2
+        dist_max_sq = max_sec_dist ** 2
 
-        loss = torch.zeros(x_batched.shape[0], device=x_batched.device)  # Initialize loss with shape (S,)
 
-        # Loop through consecutive agent pairs
-        for i in range(self.n_agents - 1):
-            # Extract positions of agent i and agent i+1
-            x1, y1 = qx[:, :, i], qy[:, :, i]
-            x2, y2 = qx[:, :, i+1], qy[:, :, i+1]
+        # compute pairwise distances
+        distance_sq = self.get_pairwise_distance_sq(x_batch)  # shape = (S, T, n_agents, n_agents)
 
-            # Calculate distance between agent i and agent i+1
-            distance = torch.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+        # mask for too close
+        mask_too_close = (distance_sq.detach() < dist_min_sq)
+        loss_too_close = 1 / (distance_sq + 1e-3) * mask_too_close * self.mask
 
-            # Calculate distance error
-            distance_error = torch.abs(distance - self.desired_distance)
+        # mask for too far
+        mask_too_far = (distance_sq.detach() > dist_max_sq)
+        # loss_too_far = (distance_sq - dist_max_sq) * mask_too_far * self.mask
+        loss_too_far = distance_sq * mask_too_far * self.mask
 
-            # Accumulate the loss (e.g., squared error)
-            loss = loss +  torch.mean(distance_error**2, dim=1)  # Mean over time and samples
+        # total loss
+        loss_form = (loss_too_close + loss_too_far).sum((-1, -2)) / 2  # shape = (S, T)
 
-        return loss.reshape(-1, 1, 1)  # Reshape to (S, 1, 1)
+        # average over time steps
+        loss_form = loss_form.sum(1) / loss_form.shape[1]
 
+        # reshape to S,1,1
+        loss_form = loss_form.reshape(-1, 1, 1)
+
+        return loss_form
+
+    # def f_loss_formation(self, x_batched):
+    #     """
+    #     Formation loss.
+    #     Penalizes deviations from the desired distance between all agent pairs.
+    #     Args:
+    #         - x_batched: tensor of shape (S, T, state_dim* n_agents = 4*n_agents, 1)
+    #             concatenated states of all agents on the third dimension.
+
+    #     Return:
+    #         - formation loss of shape (1, 1).
+    #     """
+    #     qx = x_batched[:, :, 0::4, :].squeeze(-1)  # x of all agents. shape = (S, T, n_agents)
+    #     qy = x_batched[:, :, 1::4, :].squeeze(-1)  # y of all agents. shape = (S, T, n_agents)
+
+    #     loss = torch.zeros(x_batched.shape[0], device=x_batched.device)  # Initialize loss with shape (S,)
+
+    #     # Loop through all agent pairs
+    #     for i in range(self.n_agents):
+    #         for j in range(i + 1, self.n_agents):  # Avoid double-counting and self-comparison
+    #             # Extract positions of agent i and agent j
+    #             x1, y1 = qx[:, :, i], qy[:, :, i]
+    #             x2, y2 = qx[:, :, j], qy[:, :, j]
+
+    #             # Calculate distance between agent i and agent j
+    #             distance = torch.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+
+    #             # Calculate distance error
+    #             distance_error = torch.abs(distance - self.desired_distance)
+
+    #             # Accumulate the loss (e.g., squared error)
+    #             loss = loss + torch.mean(distance_error**2, dim=1)  # Mean over time and samples
+
+    #     return loss.reshape(-1, 1, 1)  # Reshape to (S, 1, 1)
 
 
     def f_loss_obst(self, x_batched):

@@ -70,7 +70,7 @@ class PerfBoostController(nn.Module):
             posdef_tol=posdef_tol, contraction_rate_lb=contraction_rate_lb
         ).to(device)
 
-        self.MLP = MLP(8, dim_out=self.dim_out)
+        self.MLP = MLP(14, dim_out=self.dim_out)
 
         # define the system dynamics without process noise
         self.noiseless_forward = noiseless_forward
@@ -89,7 +89,7 @@ class PerfBoostController(nn.Module):
 
         self.c_ren.x = self.c_ren.init_x    # reset the REN state to the initial value
 
-    def forward(self, input_t: torch.Tensor, vg:torch.Tensor, xbar:torch.Tensor, neighbor_pos:torch.Tensor):
+    def forward(self, input_t: torch.Tensor, vg:torch.Tensor, xbar:torch.Tensor, neighbor_pos:torch.Tensor, neighbor_vel:torch.Tensor, u_neighbor:torch.Tensor = None):
         """
         Forward pass of the controller.
 
@@ -121,7 +121,8 @@ class PerfBoostController(nn.Module):
         xbar = xbar.to(device) # Antoine added this line
         # apply REN
         output_REN = self.c_ren.forward(w_)
-        mlp_input = torch.cat((w_, xbar), dim=2)
+
+        mlp_input = torch.cat((w_, xbar, neighbor_pos, neighbor_vel, u_neighbor), dim=2)
         mlp_input = mlp_input.view(input_t.shape[0],1, -1)
    
 

@@ -173,3 +173,5 @@ experiments/*/round_trip_test_results/
 experiments/*/trajectories/
 
 *.pkl
+experiments/robots/final_pres_results/
+experiments/robots/distributed_control.py

@@ -105,12 +105,6 @@ class RobotsSystem(torch.nn.Module):
                                    ), dim=1),
                         ), dim=0)
 
-        # _A2 = torch.cat((torch.cat((torch.zeros(2,2),
-        #                 torch.eye(2)
-        #                 ), dim=1),
-        #         torch.cat((torch.zeros(2,2),
-        #                     torch.zeros(2,2))
-        #                     ), dim=1), dim=0)
         _A2 = torch.kron(torch.eye(self.n_agents), _A2)
         A_lin = _A1 + self.h * _A2
 

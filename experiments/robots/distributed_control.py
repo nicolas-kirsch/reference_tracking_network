@@ -43,10 +43,14 @@ def distributed_rollout(sys1, sys2, ctl1, ctl2, data1, data2, train=False, devic
         # Each robot gets the other's position
         p1 = x1[..., :2]  # (batch, 1, 2)
         p2 = x2[..., :2]
+        v1 = x1[..., 2:]  # (batch, 1, 2)
+        v2 = x2[..., 2:]
 
         # Controller computes control using neighbor's position
-        u1 = ctl1(x1, v1, xbar1[:, t:t+1, :2], neighbor_pos=p2)
-        u2 = ctl2(x2, v2, xbar2[:, t:t+1, :2], neighbor_pos=p1)
+        u1 = ctl1(x1, v1, xbar1[:, t:t+1, :2], neighbor_pos=p2, 
+                  neighbor_vel=v2)
+        u2 = ctl2(x2, v2, xbar2[:, t:t+1, :2], neighbor_pos=p1, 
+                  neighbor_vel=v1)
 
         # Step each system
         x1, v1 = sys1.forward(t, x1, v1, u1, w=w1[:, t:t+1, :], xbar=xbar1[:, t:t+1, :])

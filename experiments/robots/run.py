@@ -13,19 +13,19 @@ from utils.plot_functions import *
 from controllers import PerfBoostController
 from loss_functions import RobotsLoss
 from utils.assistive_functions import WrapLogger
-from utils.assistive_functions import compute_distance_metric
+from utils.assistive_functions import compute_distance_metric, calculate_average_distance
 import distributed_control 
 
 # torch.autograd.set_detect_anomaly(True)
 args = argument_parser()
 # ----- SET UP LOGGER -----
 now = datetime.now().strftime("%m_%d_%H_%M_%S")
-save_path = os.path.join(BASE_DIR, 'experiments', 'robots', args.save_path)
+save_path = os.path.join(BASE_DIR, 'experiments', 'robots', args.save_path, 'num_rollouts_'+str(args.num_rollouts))
 
 # save_folder = os.path.join(save_path, 'perf_boost_'+now)
 save_folder = os.path.join(
     save_path,
-    f"{now}_nl_{args.dim_nl}_int_{args.dim_internal}_rol_{args.num_rollouts}_ep_{args.epochs}"
+    f"{now}_alpha_formation_{args.alpha_formation}"
 )
 os.makedirs(save_folder)
 
@@ -41,8 +41,15 @@ logger.info(msg)
 torch.manual_seed(args.random_seed)
 
 # ------------ 1. Dataset ------------
-xbar_direct = torch.tensor([0, 4, 0, 0,
-                            2, 4, 0, 0])
+xbar_direct = torch.tensor([0.75, 6, 0, 0,
+                            3.25, 6, 0, 0])
+
+xbar_direct2 = torch.tensor([4, 6, 0, 0,
+                             6.5, 6, 0, 0])
+
+xbar_direct3 = torch.tensor([3.25, 6, 0, 0,
+                             0.75, 6, 0, 0])
+
 # xbar_direct1 = torch.tensor([-1, 4, 0, 0])
 # xbar_direct2 = torch.tensor([0, 4, 0, 0])
 
@@ -52,8 +59,8 @@ xbar_center = torch.tensor([0.5, 4, 0, 0])
 obstacle_centers = args.obstacle_centers
 obstacle_covs = args.obstacle_covs
 
-x0 = torch.tensor([0, 0, 0, 0, 
-                   2, 0, 0, 0])   # x y vx vy
+x0 = torch.tensor([0.75, -2, 0, 0, 
+                   3.25, -2, 0, 0])   # x y vx vy
 x0_1 = x0[:4]   # x y vx vy
 x0_2 = x0[4:8]   # x y vx vy
 
@@ -71,7 +78,8 @@ test_data_2 = torch.cat((test_data[:, :, 4:8], test_data[:, :, 12:16]), dim=-1)
 
 
 # data for plots
-t_ext = args.horizon * 4
+# t_ext = args.horizon * 4
+t_ext = args.horizon + 200 - 1
 n_agents = args.n_agents
 
 plot_data = test_data[250:350,:,:]
@@ -97,14 +105,15 @@ x_init_2 = torch.zeros((1,4))
 x_init_2[:, :2] = x_init_2[:, :2] + 5e-6 # Add to x and y
 # x_init_2 = x0_2
 
+k_distance = 10
 robot1 = RobotsSystem(
     x_init=x_init_1,
-    u_init=plant_input_init, linear_plant=args.linearize_plant, k=args.spring_const, n_agents=1, leader=True , distance_to_neighbor=args.distance_agents
+    u_init=plant_input_init, linear_plant=args.linearize_plant, k=args.spring_const, n_agents=1, leader=False , distance_to_neighbor=args.distance_agents, k_distance=k_distance
 ).to(device)
 
 robot2 = RobotsSystem(
     x_init=x_init_2,
-    u_init=plant_input_init, linear_plant=args.linearize_plant, k=args.spring_const, n_agents=1, leader=False , distance_to_neighbor=args.distance_agents
+    u_init=plant_input_init, linear_plant=args.linearize_plant, k=args.spring_const, n_agents=1, leader=False , distance_to_neighbor=args.distance_agents, k_distance=k_distance
 ).to(device)
 
 
@@ -129,7 +138,8 @@ ctl2 = PerfBoostController(
 
 network_robots = Network([robot1, robot2], [ctl1, ctl2])
 # # ------------ 4. Loss ------------
-Q = 95*torch.kron(torch.eye(args.n_agents), torch.eye(2)).to(device)   # TODO: move to args and print info
+Q = 150*torch.kron(torch.eye(args.n_agents), torch.eye(2)).to(device)   # TODO: move to args and print info
+# Q = 0*torch.kron(torch.eye(args.n_agents), torch.eye(2)).to(device)   # TODO: move to args and print info
 Qs = 1*torch.kron(torch.eye(args.n_agents), torch.eye(2)).to(device)   # TODO: move to args and print info 
 loss_fn = RobotsLoss(
     Q=Q,Qs = Qs, alpha_u=args.alpha_u, xbar=train_data_1[0,:,:],
@@ -160,17 +170,25 @@ optimizer2 = torch.optim.Adam(ctl2.parameters(), lr=args.lr)
 # plot closed-loop trajectories before training the controller
 logger.info('Plotting closed-loop trajectories before training the controller...')
 
-data_verif_1 = torch.zeros(1, args.horizon+200, 8)
+data_verif_1 = torch.zeros(3, args.horizon+200, 8)
 data_verif_1[:, 0:1, :4] = \
     x0_1
 data_verif_1[0:1, 1:, 4:] = \
     xbar_direct[:4]
+data_verif_1[1:2, 1:, 4:] = \
+    xbar_direct2[:4]
+data_verif_1[2:3, 1:, 4:] = \
+    xbar_direct3[:4]
 
-data_verif_2 = torch.zeros(1, args.horizon+200, 8)
+data_verif_2 = torch.zeros(3, args.horizon+200, 8)
 data_verif_2[:, 0:1, :4] = \
     x0_2
 data_verif_2[0:1, 1:, 4:] = \
     xbar_direct[4:8]
+data_verif_2[1:2, 1:, 4:] = \
+    xbar_direct2[4:8]
+data_verif_2[2:3, 1:, 4:] = \
+    xbar_direct3[4:8]
 
 
 
@@ -179,9 +197,19 @@ data_verif_2[0:1, 1:, 4:] = \
 x_log, u_log, v_log, e_log = network_robots.rollout(
     data_list=[data_verif_1, data_verif_2], device=device)
 
+# Calculate the average distance between the two robots for the first 100 seconds
+average_distance_straight = calculate_average_distance(x_log[0, :, :], t=100)
+average_distance_diag = calculate_average_distance(x_log[1, :, :], t=100)
+average_distance_crossed = calculate_average_distance(x_log[2, :, :], t=100)
+logger.info(f"Average distance between robots for the first 100 seconds: {average_distance_straight}")
+logger.info(f"Average distance between robots for the first 100 seconds: {average_distance_diag}")
+logger.info(f"Average distance between robots for the first 100 seconds: {average_distance_crossed}")
+
+
+
 # Calculate the distance between the two robots at the end of the trajectory
-distance = torch.norm(x_log[:, -1, 0:2] - x_log[:, -1, 4:6], dim=-1)
-logger.info(f"Distance between robots at the end of the trajectory: {distance.item()}")
+# distance = torch.norm(x_log[:, -1, 0:2] - x_log[:, -1, 4:6], dim=-1)
+# logger.info(f"Distance between robots at the end of the trajectory: {distance.item()}")
 
 
 # x_log = x_log.permute(0, 2, 1, 3)  # (batch, T, n_agents, state_dim)
@@ -189,21 +217,41 @@ logger.info(f"Distance between robots at the end of the trajectory: {distance.it
 plot_trajectories(
     x_log[0, :, :], # remove extra dim due to batching
     xbar=xbar_direct, n_agents=args.n_agents,
-    save_folder=save_folder, filename='CL_init.png',
+    save_folder=save_folder, filename='straight_init.png',
+    text="CL - before training", T=t_ext,
+    obstacle_centers=obstacle_centers,
+    obstacle_covs=obstacle_covs,
+)
+
+plot_trajectories(
+    x_log[1, :, :], # remove extra dim due to batching
+    xbar=xbar_direct2, n_agents=args.n_agents,
+    save_folder=save_folder, filename='diag_init.png',
+    text="CL - before training", T=t_ext,
+    obstacle_centers=obstacle_centers,
+    obstacle_covs=obstacle_covs,
+)
+
+
+plot_trajectories(
+    x_log[2, :, :], # remove extra dim due to batching
+    xbar=xbar_direct3, n_agents=args.n_agents,
+    save_folder=save_folder, filename='crossed_init.png',
     text="CL - before training", T=t_ext,
     obstacle_centers=obstacle_centers,
     obstacle_covs=obstacle_covs,
 )
 
 logger.info('\n------------ Begin training ------------')
-best_valid_loss = 1e6
+best_valid_loss = 1e9
 t = time.time()
+plot_at_best_epoch = args.plot_at_best_epoch
 for epoch in range(1+args.epochs):
     # print(f"Epoch {epoch}")
     # iterate over all data batches
     for train_data_batch in train_dataloader:
-        train_data_batch_robot1 = train_data_batch[:, :, 0:8]  # (batch, T, 8)
-        train_data_batch_robot2 = train_data_batch[:, :, 8:16]  # (batch, T, 8)
+        train_data_batch_robot1 = torch.cat((train_data_batch[:, :, 0:4], train_data_batch[:, :, 8:12]), dim=-1)  # (batch, T, 8)
+        train_data_batch_robot2 = torch.cat((train_data_batch[:, :, 4:8], train_data_batch[:, :, 12:16]), dim=-1)  # (batch, T, 8)
         optimizer1.zero_grad()
         optimizer2.zero_grad()
         # simulate over horizon steps
@@ -211,6 +259,7 @@ for epoch in range(1+args.epochs):
 
         # loss of this rollout
         loss1 = loss_fn.forward(x_log, u_log,e_log)[0]
+        loss_form = loss_fn.forward(x_log, u_log,e_log)[-1]
         # take a step
         loss1.backward()
         
@@ -219,11 +268,12 @@ for epoch in range(1+args.epochs):
 
     # print info
     if epoch%args.log_epoch == 0:
-        msg = 'Epoch: %i --- train loss: %.2f'% (epoch, loss1)
+        msg = 'Epoch: %i --- train loss: %.2f -- form loss: %.2f' % (epoch, loss1, loss_form)
 
         if args.return_best:
             # rollout the current controller on the valid data
             with torch.no_grad():
+                network_robots = Network([robot1, robot2], [ctl1, ctl2])
                 x_log, u_log, v_log, e_log = network_robots.rollout(data_list=[train_data_batch_robot1, train_data_batch_robot2], device=device)
                 # loss of the valid data
                 loss_valid = loss_fn.forward(x_log, u_log,e_log)[0]
@@ -236,22 +286,50 @@ for epoch in range(1+args.epochs):
 
                 best_params_mlp_1 = ctl1.get_mlp_parameters()
                 best_params_mlp_2 = ctl2.get_mlp_parameters()
+                
                 msg += ' (best so far)'
+                
         duration = time.time() - t
         msg += ' ---||--- time: %.0f s' % (duration)
         logger.info(msg)
         t = time.time()
 
+        if plot_at_best_epoch:
+            # plot closed-loop trajectories using the best controller
+            # logger.info('Plotting closed-loop trajectories using the best controller...')
+            x_log, u_log, v_log, e_log = network_robots.rollout(
+                data_list=[data_verif_1, data_verif_2], device=device)
+
+            # Calculate the distance between the two robots at the end of the trajectory
+            # distance = torch.norm(x_log[:, -1, 0:2] - x_log[:, -1, 4:6], dim=-1)
+            # logger.info(f"Distance between robots at the end of the trajectory: {distance.item()}")
+            plot_trajectories(
+                x_log[0, :, :], # remove extra dim due to batching
+                xbar=xbar_direct, n_agents=args.n_agents,
+                save_folder=save_folder, filename=f'CL_best_{epoch}.png',
+                text=f"CL - best controller - {epoch}", T=t_ext,
+                obstacle_centers=obstacle_centers,
+                obstacle_covs=obstacle_covs,
+            )
+
 # set to best seen during training
-if args.return_best:
-    ctl1.set_parameters_as_vector(best_params_ren_1)
-    ctl2.set_parameters_as_vector(best_params_ren_2)
-    ctl1.set_mlp_parameters(best_params_mlp_1)
-    ctl2.set_mlp_parameters(best_params_mlp_2)
+# if args.return_best:
+#     ctl1.set_parameters_as_vector(best_params_ren_1)
+#     ctl2.set_parameters_as_vector(best_params_ren_2)
+#     ctl1.set_mlp_parameters(best_params_mlp_1)
+#     ctl2.set_mlp_parameters(best_params_mlp_2)
+
+network_robots = Network([robot1, robot2], [ctl1, ctl2])
+
+
 
 # # ------ 7. Save and evaluate the trained model ------
-# # save
-# res_dict = ctl.c_ren.state_dict()
+# save
+torch.save(ctl1, os.path.join(save_folder, 'ctl1.pth'))
+torch.save(ctl2, os.path.join(save_folder, 'ctl2.pth'))
+logger.info('[INFO] saved trained controllers.')
+
+# res_dict = ctl1.c_ren.state_dict()
 # # TODO: append args
 # res_dict['Q'] = Q
 # filename = os.path.join(save_folder, 'trained_controller'+'.pt')
@@ -404,9 +482,17 @@ logger.info('Plotting closed-loop trajectories using the trained controller...')
 x_log, u_log, v_log, e_log = network_robots.rollout(
     data_list=[data_verif_1, data_verif_2], device=device)
 
+# Calculate the average distance between the two robots for the first 100 seconds
+average_distance_straight = calculate_average_distance(x_log[0, :, :], t=100)
+average_distance_diag = calculate_average_distance(x_log[1, :, :], t=100)
+average_distance_crossed = calculate_average_distance(x_log[2, :, :], t=100)
+logger.info(f"Average distance between robots for the first 100 seconds: {average_distance_straight}")
+logger.info(f"Average distance between robots for the first 100 seconds: {average_distance_diag}")
+logger.info(f"Average distance between robots for the first 100 seconds: {average_distance_crossed}")
+
 # Calculate the distance between the two robots at the end of the trajectory
-distance = torch.norm(x_log[:, -1, 0:2] - x_log[:, -1, 4:6], dim=-1)
-logger.info(f"Distance between robots at the end of the trajectory: {distance.item()}")
+# distance = torch.norm(x_log[:, -1, 0:2] - x_log[:, -1, 4:6], dim=-1)
+# logger.info(f"Distance between robots at the end of the trajectory: {distance.item()}")
 
 
 # x_log = x_log.permute(0, 2, 1, 3)  # (batch, T, n_agents, state_dim)
@@ -414,12 +500,29 @@ logger.info(f"Distance between robots at the end of the trajectory: {distance.it
 plot_trajectories(
     x_log[0, :, :], # remove extra dim due to batching
     xbar=xbar_direct, n_agents=args.n_agents,
-    save_folder=save_folder, filename='CL_init_trained.png',
+    save_folder=save_folder, filename='straight_trained.png',
+    text="CL - after training", T=t_ext,
+    obstacle_centers=obstacle_centers,
+    obstacle_covs=obstacle_covs,
+)
+plot_trajectories(
+    x_log[1, :, :], # remove extra dim due to batching
+    xbar=xbar_direct2, n_agents=args.n_agents,
+    save_folder=save_folder, filename='diag_trained.png',
     text="CL - after training", T=t_ext,
     obstacle_centers=obstacle_centers,
     obstacle_covs=obstacle_covs,
 )
 
+
+plot_trajectories(
+    x_log[2, :, :], # remove extra dim due to batching
+    xbar=xbar_direct3, n_agents=args.n_agents,
+    save_folder=save_folder, filename='crossed_trained.png',
+    text="CL - after training", T=t_ext,
+    obstacle_centers=obstacle_centers,
+    obstacle_covs=obstacle_covs,
+)
 # x_verif, _, u_verif = sys.rollout(ctl, data_verif)
 # v_verif = sys.v_log
 # plot_trajectories(
