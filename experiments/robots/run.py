@@ -43,72 +43,14 @@ torch.manual_seed(args.random_seed)
 xbar_direct = torch.tensor([-1, 4, 0, 0, 5., 4 ,0 ,0 ])
 xbar_diag = torch.tensor([5, 4, 0, 0, -1., 4 ,0 ,0 ])
 xbar_center = torch.tensor([0.5, 4, 0, 0, 1.5, 4 ,0 ,0 ])
-# x_init = torch.tensor([7, 4, 0, 0, -3., 4 ,0 ,0 ])
 
-# x_init = torch.tensor([7, 4, 0, 0, -3., 4 ,0 ,0 ])
-
-# xbar_direct = torch.tensor([2, 2, 0, 0, 
-#                            -2., 2 ,0 ,0,
-#                            1, 2, 0, 0,
-#                            ])
-# xbar_diag = torch.tensor([-2, 2, 0, 0,
-#                             2., 2 ,0 ,0,
-#                             1, 2, 0, 0,
-#                             ])
-# xbar_center = torch.tensor([0.5, 4, 0, 0,
-#                             1.5, 4 ,0 ,0,
-#                             1, 4, 0, 0,
-#                             ])
-# x_init = torch.tensor([7, 4, 0, 0,
-#                        -3., 4 ,0 ,0,
-#                           1, 4, 0, 0,
-#                           ])
-
-# obstacle_centers = [
-#                 torch.tensor([[-0.5, 0]], device=device),
-#                 torch.tensor([[0.5, 0.0]], device=device),
-#             ]
-
-# obstacle_centers = [
-#                 torch.tensor([[0.5, 2]], device=device),
-#                 torch.tensor([[1, 2.0]], device=device),
-#                 torch.tensor([[3, 2]], device=device),
-#                 torch.tensor([[3.5, 2.0]], device=device),
-
-#             ]
-
-# obstacle_centers = [
-#                 torch.tensor([[-1, 2]], device=device),
-#                 torch.tensor([[1, 2.0]], device=device),
-#                 torch.tensor([[3, 2]], device=device),
-#                 torch.tensor([[5, 2.0]], device=device),
-#                 torch.tensor([[7, 2.0]], device=device),
-#                 torch.tensor([[-3, 2.0]], device=device),
-#             ]
-
-# obstacle_covs = [
-#     torch.tensor([[0.1, 0.1]], device=device)
-#             ] * len(obstacle_centers)
-
-# obstacle_centers = None
-# obstacle_covs = None
 obstacle_centers = args.obstacle_centers
 obstacle_covs = args.obstacle_covs
-# x0 = torch.rand(args.n_agents, 4, dtype=torch.float)
-# x0 = torch.tensor([-2, -2, 0, 0,
-#                     2, -2, 0, 0,
-#                     1, -2, 0, 0,
-#                      ])
+
 x0 = torch.tensor([4, 0, 0, 0,   # x y vx vy
                     0, 0, 0, 0,
                     ])
-# x0 = torch.tensor([0, 0, 0, 0,   # x y vx vy
-#                     4, 0, 0, 0,
-#                     ])
 
-# x0 = torch.tensor([-2, -3, 0, 0,
-#                     2, -3, 0, 0,
-#                     ])
 
 dataset = RobotsDataset(random_seed=args.random_seed, horizon=args.horizon, x_bar=xbar_direct, x0=x0, std_ini=args.std_init_plant, n_agents=args.n_agents)
 
@@ -126,9 +68,7 @@ n_agents = args.n_agents
 
 plot_data = test_data[250:350,:,:]
 plot_data[:, 0, :4*args.n_agents] = dataset.x0.detach()
-#plot_data[:,1:,8:] = dataset.xbar
 
-#test_data[250:350,:,:]
 """"""
 plot_data = plot_data.to(device)
 
@@ -219,19 +159,6 @@ plot_trajectories(
     obstacle_covs=loss_fn.obstacle_covs
 )
 
-# Generate frames for the trajectory
-# save_trajectory_frames(
-#     x=x_verif[0], xbar=xbar_direct, n_agents=sys.n_agents,
-#     save_folder=os.path.join(save_folder, 'trajectory_frames_diag_ref'), T=30,
-#     obstacle_centers=loss_fn.obstacle_centers, obstacle_covs=loss_fn.obstacle_covs
-# )
-
-# # Create GIF for the trajectory
-# create_gif_from_frames(
-#     frame_folder=os.path.join(save_folder, 'trajectory_frames_diag_ref'),
-#     gif_filename=os.path.join(save_folder, 'trajectory_diag_ref.gif'),
-#     duration=0.1
-# )
 
 plot_trajectories(
     x_verif[1, :, :], # remove extra dim due to batching
@@ -307,11 +234,6 @@ filename = os.path.join(save_folder, 'trained_controller'+'.pt')
 torch.save(res_dict, filename)
 logger.info('[INFO] saved trained model.')
 
-# collision_log_file = os.path.join(save_folder, 'collision_log.csv')
-#
-# collision_log_file = os.path.join('collision_log.csv')
-# with open(collision_log_file, 'a') as f:
-    # f.write("dim_internal,dim_nl,train_collisions,test_collisions\n")
 
 # evaluate on the train data
 logger.info('\n[INFO] evaluating the trained controller on %i training rollouts.' % train_data.shape[0])
@@ -356,26 +278,6 @@ if args.alpha_obst:
     msg += ' -- Number of obstacle collisions = %i' % obst_col + ' -- Percentage of obstacle collisions = %.2f' % obst_col_percentage
 logger.info(msg)
 
-# # Evaluate the round-trip trajectory
-# logger.info('Evaluating the round-trip trajectory...')
-# with torch.no_grad():
-#     x_log, e_log, u_log = sys.rollout(
-#         controller=ctl, data=data_verif[3:4, :, :], train=False,
-#     )
-#     rt_loss, rt_obst_loss  = loss_fn.forward(x_log, u_log, e_log)[:2]
-#     rt_loss, rt_obst_loss = rt_loss.item(), rt_obst_loss.item()
-#     msg = 'Round-trip Loss: %.4f' % (rt_loss)
-#     rt_test_collisions = 0
-#     if args.col_av:
-#         rt_test_collisions, percentage_rt_collisions= loss_fn.count_collisions(x_log)
-#         msg += ' -- Number of collisions = %i' % rt_test_collisions + ' -- Percentage of collisions = %.2f' % percentage_rt_collisions
-#     if args.alpha_obst:
-#         msg += " -- Obstacle Loss: %.4f" % (rt_obst_loss)
-#     logger.info(msg)
-
-# with open(collision_log_file, 'a') as f:
-#     f.write(f"{args.dim_internal},{args.dim_nl},{train_collisions},{test_collisions}\n")
-# Log the results based on the --record argument
 if args.record:
 
     # Define the output directory and file
@@ -419,34 +321,6 @@ if args.record:
         print(f"Results saved to {results_file}")
 
 
-    # log_dir = os.path.join('sensitivity_study')
-    # os.makedirs(log_dir, exist_ok=True)
-    # # record_type = args.record.strip().lower()
-    # record_type = args.filename.strip().lower()
-    # log_file = os.path.join(log_dir, f'{record_type}.csv')
-
-
-    # # Define the column headers
-    # headers = "dim_internal,dim_nl,train_collisions,test_collisions,rt_test_collisions,rt_loss,rt_obst_loss\n" if args.record == 'dim' else \
-    #         "num_rollouts,train_collisions,test_collisions,rt_test_collisions,rt_loss,rt_obst_loss\n"
-
-    # # Check if the file exists
-    # if not os.path.exists(log_file):
-    #     # Write the headers if the file doesn't exist
-    #     with open(log_file, 'w') as f:
-    #         f.write(headers)
-
-    # with open(log_file, 'a') as f:
-    #     if args.record == 'dim':
-    #         f.write(f"{args.dim_internal},{args.dim_nl},{train_collisions},{test_collisions},{rt_test_collisions}, {rt_loss}, {rt_obst_loss}\n")
-    #     elif args.record == 'rollouts':
-    #         f.write(f"{args.num_rollouts},{train_collisions},{test_collisions},{rt_test_collisions}, {rt_loss}, {rt_obst_loss}\n")
-
-# # count collisions
-# if args.col_av:
-#     num_col = loss_fn.count_collisions(x_log)
-#     msg += ' -- Number of collisions = %i' % num_col
-# logger.info(msg)
 
 # plot closed-loop trajectories using the trained controller
 logger.info('Plotting closed-loop trajectories using the trained controller...')
@@ -489,20 +363,6 @@ plot_trajectories(
     obstacle_covs=loss_fn.obstacle_covs
 )
 
-
-# # plot the cases which resulted in collisions with the obstacle
-# if args.col_av and args.alpha_obst:
-#     x_log, _, u_log = sys.rollout(ctl, obst_col_cases)
-#     for i in range(2):
-        
-#         plot_trajectories(
-#             x_log[i, :, :], # remove extra dim due to batching
-#             xbar=obst_col_cases[i][0,5,8:], n_agents=sys.n_agents,
-#             save_folder=save_folder, filename=f'Collisions/CL_obstacle_collision_{i}.pdf',
-#             text="CL - trained controller", T=t_ext, 
-#             obstacle_centers=loss_fn.obstacle_centers,
-#             obstacle_covs=loss_fn.obstacle_covs
-#         )
 
 x_ref_evol = torch.zeros(1,args.horizon+200,8)
 x_ref_evol[:,:,0:2] = u_verif[0:1,:,0:2]
@@ -572,5 +432,3 @@ plt.suptitle(f'Integral variable over time \n for the diagonal scenario', fontsi
 plt.savefig(os.path.join(save_folder, "V_over_time.png"))
 plt.close()
 
-
-# print(u_verif[0,:,:])
