@@ -168,7 +168,6 @@ class RobotsSystem(torch.nn.Module):
         xbar = xbar.to(device) # Antoine added this line
         dxref = dxref.to(device) # Antoine added this line
 
-
         indices_x = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[0, 1])
         # e = (xbar+dxref) - x[:,:,[0, 1, 4, 5]]
         e = (xbar+dxref) - x[:,:,indices_x]
@@ -178,6 +177,7 @@ class RobotsSystem(torch.nn.Module):
         v = v + e 
 
         u = -F.linear(x,self.K_p) -F.linear(v,self.K_i)
+        # u = torch.zeros_like(dxref)
         
         indices_v = self.generate_indices(self.n_agents, state_dim_per_agent=4, selected_dims=[2, 3])
         # tanh_q = torch.tanh(x[:,:,[2, 3, 6, 7]])

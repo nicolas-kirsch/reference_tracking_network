@@ -116,6 +116,12 @@ class RobotsLoss(LQLossFH):
         loss_ca = torch.sum(loss_ca, 0)/xs.shape[0]
         loss_obst = torch.sum(loss_obst, 0)/xs.shape[0]
         loss_speed = torch.sum(loss_speed, 0)/xs.shape[0]
+        # print(f"loss_x: {loss_x}")
+        # print(f"loss_u: {loss_u}")
+        # print(f"loss_ca: {loss_ca}")
+        # print(f"loss_obst: {loss_obst}")
+        # print(f"loss_speed: {loss_speed}")
+        # print(f"loss_val: {loss_val}")
         return loss_val, loss_obst, loss_x, loss_u, loss_ca, loss_speed
 
     def f_loss_obst(self, x_batched):
@@ -180,7 +186,7 @@ class RobotsLoss(LQLossFH):
         if len(x_batch.shape) == 3:
             x_batch = x_batch.reshape(*x_batch.shape, 1)
         distance_sq = self.get_pairwise_distance_sq(x_batch)  # shape = (S, T, n_agents, n_agents)
-        col_matrix = (0.0001 < distance_sq) * (distance_sq < self.min_dist ** 2)  # Boolean collision matrix of shape (S, T, n_agents, n_agents)
+        col_matrix = (0.0001 < distance_sq) * (distance_sq < (self.min_dist + 0.2) ** 2)  # Boolean collision matrix of shape (S, T, n_agents, n_agents)
 
         # Calculate the percentage of rollouts with collisions
         rollouts_with_collisions = col_matrix.any(dim=(1, 2, 3))  # Check if any collision occurred in each rollout (shape = (S,))

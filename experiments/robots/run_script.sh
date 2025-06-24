@@ -40,9 +40,9 @@ set -e
 # done
 
 # # # # Sensitivity analysis for num-rollouts
-# for num_rollouts in 10 50 100 200 300 400 500 600 700 800; do
+# for num_rollouts in 600 700 800; do
 #     echo "Running simulation with num-rollouts: $num_rollouts"
-#     python run.py --num-rollouts "$num_rollouts" --record rollouts --filename rollouts10 --save-path "saved_results_v10" 
+#     python run.py --num-rollouts "$num_rollouts" --record rollouts --filename rollouts12 --save-path "finalPresentation/dataset_size_sensitivity" --dim-internal 8 --dim-nl 8 --epochs 800
 #     echo "Finished running with num-rollouts: $num_rollouts"
 #     echo "------------------------------------"
 # done
@@ -54,9 +54,17 @@ set -e
 #     echo "Finished running with rt-epochs: $rt_epoch"
 #     echo "------------------------------------"
 # done
-for rt_epoch in 0.0 0.2 0.4 0.6 0.8 1; do
+
+# Sensitivity analysis for rt-epochs with different save paths and filenames
+for rt_epoch in 0.0 0.1 0.2 0.3 0.4 ; do
     echo "Running simulation with rt-epochs: $rt_epoch"
-    python run_rt_v3.py --epochs 400 --rt-epochs "$rt_epoch" --record rollouts --filename rt_epochs16 --save-path "saved_results_v16"  --use-previous-params False --model-path "saved_models/trained_controller_0.pt"
+    python run_rh.py --rt-epochs "$rt_epoch" --record rollouts --filename rt_epochs22_F --save-path "saved_results_v22_F"  --use-previous-params 0 --model-path "saved_models/trained_controller_0_back.pt"
+    echo "Finished running with rt-epochs: $rt_epoch"
+    echo "------------------------------------"
+done
+for rt_epoch in 0.0 0.1 0.2 0.3 0.4; do
+    echo "Running simulation with rt-epochs: $rt_epoch"
+    python run_rh.py --rt-epochs "$rt_epoch" --record rollouts --filename rt_epochs22_T --save-path "saved_results_v22_T"  --use-previous-params 1 --model-path "saved_models/trained_controller_0_back.pt"
     echo "Finished running with rt-epochs: $rt_epoch"
     echo "------------------------------------"
 done

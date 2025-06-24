@@ -15,7 +15,7 @@ os.makedirs(figures_dir, exist_ok=True)
 
 # Load JSON files
 dim_file = os.path.join(sensitivity_dir, "dim10.json")
-rollouts_file = os.path.join(sensitivity_dir, "rollouts10.json")
+rollouts_file = os.path.join(sensitivity_dir, "rollouts12.json")
 
 with open(dim_file, "r") as f:
     dim_data = json.load(f)
@@ -64,8 +64,26 @@ current_datetime = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 # plt.savefig(loss_svg_path, format="svg")
 # print(f"Obstacle loss heat map saved to {loss_svg_path}")
 
-# Limit rollouts to 600
-rollouts_df = rollouts_df[rollouts_df["num_rollouts"] <= 600]
+# ------------------ Plot 1c: Heat Map for Number of Parameters ------------------
+# params_pivot = dim_df.pivot(index="dim_nl", columns="dim_internal", values="num_parameters")
+
+# fig, ax = plt.subplots(figsize=(5, 4))  # Slightly smaller square size
+# sns.heatmap(params_pivot, annot=True, fmt=".1e", cmap="Greens", ax=ax, cbar_kws={'label': 'Number of Parameters'})
+# # ax.set_title(f"Number of Parameters (Rollouts: {dim_df['num_rollouts'].iloc[0]})", fontsize=16)
+# ax.set_xlabel("dim-internal", fontsize=14)
+# ax.set_ylabel("dim-nl", fontsize=14)
+# ax.tick_params(axis="both", labelsize=12)
+# ax.invert_yaxis()  # Invert the y-axis
+
+# # Save the plot as SVG
+# params_svg_path = os.path.join(figures_dir, f"dim_params_heatmap_{current_datetime}.svg")
+# plt.tight_layout()
+# plt.savefig(params_svg_path, format="svg")
+# print(f"Number of parameters heat map saved to {params_svg_path}")
+
+
+# Limit rollouts to 800
+rollouts_df = rollouts_df[rollouts_df["num_rollouts"] <= 800]
 # Create a single figure with three subplots
 fig, axes = plt.subplots(3, 1, figsize=(10, 5), sharex=True)  # Wide figure with shared x-axis
 

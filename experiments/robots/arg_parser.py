@@ -57,13 +57,13 @@ def argument_parser():
       
     # Roudtrip
     parser.add_argument('--rt-epochs', type=float, default=0.0, help='Percentage of epochs to be used for learning to come back to x0, Default is 0.0.')
-    parser.add_argument('--use-previous-params', type=bool, default=False, help='Use the best ctrl param of the previous ctrl. Default is False.')
+    parser.add_argument('--use-previous-params', type=int, default=0, help='Use the best ctrl param of the previous ctrl. Default is False.')
 
     # Load model
     parser.add_argument('--model-path', type=str, default=None, help='Path to the saved model file')
 
     # Save results path
-    parser.add_argument('--save-path', type=str, default='saved_results_rt', help='Path to save the results. Default is "saved_results".')
+    parser.add_argument('--save-path', type=str, default='saved_results_final_pres', help='Path to save the results. Default is "saved_results".')
 
     # Training range x_interval tuple
     parser.add_argument('--x-interval', type=ast.literal_eval, default=(-3, 5), help='Interval for x. Default is (-3, 7).')

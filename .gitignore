@@ -173,3 +173,4 @@ experiments/*/round_trip_test_results/
 experiments/*/trajectories/
 
 *.pkl
+experiments/robots/finalPresentation/

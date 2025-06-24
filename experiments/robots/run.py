@@ -40,9 +40,12 @@ logger.info(msg)
 torch.manual_seed(args.random_seed)
 
 # ------------ 1. Dataset ------------
-xbar_direct = torch.tensor([-1, 4, 0, 0, 5., 4 ,0 ,0 ])
-xbar_diag = torch.tensor([5, 4, 0, 0, -1., 4 ,0 ,0 ])
-xbar_center = torch.tensor([0.5, 4, 0, 0, 1.5, 4 ,0 ,0 ])
+# xbar_direct = torch.tensor([-1, 4, 0, 0, 5., 4 ,0 ,0 ])
+# xbar_diag = torch.tensor([5, 4, 0, 0, -1., 4 ,0 ,0 ])
+# xbar_center = torch.tensor([0.5, 4, 0, 0, 1.5, 4 ,0 ,0 ])
+xbar_direct = torch.tensor([0, 4, 0, 0,
+                            2, 4, 0, 0])
+
 # x_init = torch.tensor([7, 4, 0, 0, -3., 4 ,0 ,0 ])
 
 # x_init = torch.tensor([7, 4, 0, 0, -3., 4 ,0 ,0 ])
@@ -99,12 +102,13 @@ obstacle_covs = args.obstacle_covs
 #                     2, -2, 0, 0,
 #                     1, -2, 0, 0,
 #                      ])
-x0 = torch.tensor([4, 0, 0, 0,   # x y vx vy
-                    0, 0, 0, 0,
-                    ])
-# x0 = torch.tensor([0, 0, 0, 0,   # x y vx vy
-#                     4, 0, 0, 0,
+
+# x0 = torch.tensor([4, 0, 0, 0,   # x y vx vy
+#                     0, 0, 0, 0,
 #                     ])
+x0 = torch.tensor([0, 0, 0, 0,   # x y vx vy
+                    2, 0, 0, 0,
+                    ])
 
 # x0 = torch.tensor([-2, -3, 0, 0,
 #                     2, -3, 0, 0,
@@ -113,8 +117,8 @@ x0 = torch.tensor([4, 0, 0, 0,   # x y vx vy
 dataset = RobotsDataset(random_seed=args.random_seed, horizon=args.horizon, x_bar=xbar_direct, x0=x0, std_ini=args.std_init_plant, n_agents=args.n_agents)
 
 # divide to train and test
-print("x-interval: ", args.x_interval)
-print('x-interval type: ', type(args.x_interval))
+# print("x-interval: ", args.x_interval)
+# print('x-interval type: ', type(args.x_interval))
 train_data, test_data = dataset.get_data(num_train_samples=args.num_rollouts, num_test_samples=500, x_interval=args.x_interval, y_interval=args.y_interval)
 train_data, test_data = train_data.to(device), test_data.to(device)
 
@@ -178,14 +182,14 @@ test_metrics = compute_distance_metric(x_log, plot_data, sys.n_agents)
 print(f"Distance metric before training: {test_metrics}")
 
 
-plot_trajectories(
-    x_log[0, :, :], # remove extra dim due to batching
-    xbar=plot_data[0,5,8:], n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_init.png',
-    text="CL - before training", T=t_ext,
-    obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs,
-)
+# plot_trajectories(
+#     x_log[0, :, :], # remove extra dim due to batching
+#     xbar=plot_data[0,5,8:], n_agents=sys.n_agents,
+#     save_folder=save_folder, filename='CL_init.png',
+#     text="CL - before training", T=t_ext,
+#     obstacle_centers=loss_fn.obstacle_centers,
+#     obstacle_covs=loss_fn.obstacle_covs,
+# )
 
 
 # Define the initial state and target state
@@ -196,10 +200,10 @@ data_verif[:, 0:1, :8] = \
     dataset.x0 
 data_verif[0:1, 1:, 8:] = \
     xbar_direct
-data_verif[1:2, 1:, 8:] = \
-    xbar_diag
-data_verif[2:3, 1:, 8:] = \
-    xbar_center
+# data_verif[1:2, 1:, 8:] = \
+#     xbar_diag
+# data_verif[2:3, 1:, 8:] = \
+#     xbar_center
 # Set the trajectory to the target state
 # data_verif[3:4, 1:data_verif.size(1)//2, 8:] = xbar_direct
 # data_verif[3:4, data_verif.size(1)//2:, 8:] = dataset.x0
@@ -233,23 +237,23 @@ plot_trajectories(
 #     duration=0.1
 # )
 
-plot_trajectories(
-    x_verif[1, :, :], # remove extra dim due to batching
-    xbar=xbar_diag, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_direct_ref.png',
-    text="CL - before training", T=t_ext, 
-    obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs
-)
+# plot_trajectories(
+#     x_verif[1, :, :], # remove extra dim due to batching
+#     xbar=xbar_diag, n_agents=sys.n_agents,
+#     save_folder=save_folder, filename='CL_direct_ref.png',
+#     text="CL - before training", T=t_ext, 
+#     obstacle_centers=loss_fn.obstacle_centers,
+#     obstacle_covs=loss_fn.obstacle_covs
+# )
 
-plot_trajectories(
-    x_verif[2, :, :], # remove extra dim due to batching
-    xbar=xbar_center, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_center_ref.png',
-    text="CL - before training", T=t_ext, 
-    obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs
-)
+# plot_trajectories(
+#     x_verif[2, :, :], # remove extra dim due to batching
+#     xbar=xbar_center, n_agents=sys.n_agents,
+#     save_folder=save_folder, filename='CL_center_ref.png',
+#     text="CL - before training", T=t_ext, 
+#     obstacle_centers=loss_fn.obstacle_centers,
+#     obstacle_covs=loss_fn.obstacle_covs
+# )
 
 logger.info('\n------------ Begin training ------------')
 best_valid_loss = 1e6
@@ -450,15 +454,15 @@ if args.record:
 
 # plot closed-loop trajectories using the trained controller
 logger.info('Plotting closed-loop trajectories using the trained controller...')
-x_log, _, u_log = sys.rollout(ctl, plot_data)
-plot_trajectories(
-    x_log[0, :, :], # remove extra dim due to batching
-    xbar=plot_data[0,5,8:], n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_trained.png',
-    text="CL - trained controller", T=t_ext, 
-    obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs
-)
+# x_log, _, u_log = sys.rollout(ctl, plot_data)
+# plot_trajectories(
+#     x_log[0, :, :], # remove extra dim due to batching
+#     xbar=plot_data[0,5,8:], n_agents=sys.n_agents,
+#     save_folder=save_folder, filename='CL_trained.png',
+#     text="CL - trained controller", T=t_ext, 
+#     obstacle_centers=loss_fn.obstacle_centers,
+#     obstacle_covs=loss_fn.obstacle_covs
+# )
 
 x_verif, _, u_verif = sys.rollout(ctl, data_verif)
 v_verif = sys.v_log
@@ -471,23 +475,23 @@ plot_trajectories(
     obstacle_covs=loss_fn.obstacle_covs
 )
 
-plot_trajectories(
-    x_verif[1, :, :], # remove extra dim due to batching
-    xbar=xbar_diag, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_direct_trained.png',
-    text="rPB - trained controller", T=t_ext, 
-    obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs
-)
+# plot_trajectories(
+#     x_verif[1, :, :], # remove extra dim due to batching
+#     xbar=xbar_diag, n_agents=sys.n_agents,
+#     save_folder=save_folder, filename='CL_direct_trained.png',
+#     text="rPB - trained controller", T=t_ext, 
+#     obstacle_centers=loss_fn.obstacle_centers,
+#     obstacle_covs=loss_fn.obstacle_covs
+# )
 
-plot_trajectories(
-    x_verif[2, :, :], # remove extra dim due to batching
-    xbar=xbar_center, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_center_trained.png',
-    text="CL - trained controller", T=t_ext, 
-    obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs
-)
+# plot_trajectories(
+#     x_verif[2, :, :], # remove extra dim due to batching
+#     xbar=xbar_center, n_agents=sys.n_agents,
+#     save_folder=save_folder, filename='CL_center_trained.png',
+#     text="CL - trained controller", T=t_ext, 
+#     obstacle_centers=loss_fn.obstacle_centers,
+#     obstacle_covs=loss_fn.obstacle_covs
+# )
 
 
 # # plot the cases which resulted in collisions with the obstacle
@@ -504,73 +508,73 @@ plot_trajectories(
 #             obstacle_covs=loss_fn.obstacle_covs
 #         )
 
-x_ref_evol = torch.zeros(1,args.horizon+200,8)
-x_ref_evol[:,:,0:2] = u_verif[0:1,:,0:2]
-x_ref_evol[:,:,4:6] = u_verif[0:1,:,2:4]
+# x_ref_evol = torch.zeros(1,args.horizon+200,8)
+# x_ref_evol[:,:,0:2] = u_verif[0:1,:,0:2]
+# x_ref_evol[:,:,4:6] = u_verif[0:1,:,2:4]
 
-x_ref_evol = x_ref_evol + xbar_direct
+# x_ref_evol = x_ref_evol + xbar_direct
 
-plot_trajectories(
-   x_ref_evol[0,:,:], # remove extra dim due to batching
-    xbar=xbar_direct, n_agents=sys.n_agents,
-    save_folder=save_folder, filename='CL_xbar_evolution.png',
-    text="CL - evolution of the reference", T=t_ext, dots = True,
-    obstacle_centers=loss_fn.obstacle_centers,
-    obstacle_covs=loss_fn.obstacle_covs
-)
-u_verif = u_verif.cpu().detach().numpy()
-# Create a figure with a 2x2 grid of subplots
-fig, axs = plt.subplots(2, 1, figsize=(10, 7))
-axs[0].plot(np.array(range(u_verif.shape[1])), u_verif[2,:,0],label = "dX")
-axs[0].plot(np.array(range(u_verif.shape[1])), u_verif[2,:,1],label = "dY")
-axs[0].set_title("Robot 1")
-axs[0].set_xlabel("Time (s)")
-axs[0].set_ylabel("Delta ref")
-axs[0].legend()
-axs[0].grid()
+# plot_trajectories(
+#    x_ref_evol[0,:,:], # remove extra dim due to batching
+#     xbar=xbar_direct, n_agents=sys.n_agents,
+#     save_folder=save_folder, filename='CL_xbar_evolution.png',
+#     text="CL - evolution of the reference", T=t_ext, dots = True,
+#     obstacle_centers=loss_fn.obstacle_centers,
+#     obstacle_covs=loss_fn.obstacle_covs
+# )
+# u_verif = u_verif.cpu().detach().numpy()
+# # Create a figure with a 2x2 grid of subplots
+# fig, axs = plt.subplots(2, 1, figsize=(10, 7))
+# axs[0].plot(np.array(range(u_verif.shape[1])), u_verif[2,:,0],label = "dX")
+# axs[0].plot(np.array(range(u_verif.shape[1])), u_verif[2,:,1],label = "dY")
+# axs[0].set_title("Robot 1")
+# axs[0].set_xlabel("Time (s)")
+# axs[0].set_ylabel("Delta ref")
+# axs[0].legend()
+# axs[0].grid()
 
-axs[1].plot(np.array(range(u_verif.shape[1])), u_verif[2,:,2],label = "dX")
-axs[1].plot(np.array(range(u_verif.shape[1])), u_verif[2,:,3],label = "dY")
-axs[1].set_title("Robot 2")
-axs[1].set_xlabel("Time (s)")
-axs[1].set_ylabel("Delta ref")
-axs[1].legend()
-axs[1].grid()
+# axs[1].plot(np.array(range(u_verif.shape[1])), u_verif[2,:,2],label = "dX")
+# axs[1].plot(np.array(range(u_verif.shape[1])), u_verif[2,:,3],label = "dY")
+# axs[1].set_title("Robot 2")
+# axs[1].set_xlabel("Time (s)")
+# axs[1].set_ylabel("Delta ref")
+# axs[1].legend()
+# axs[1].grid()
 
-# Adjust layout to prevent overlap
-plt.tight_layout()
-plt.subplots_adjust(top=0.9)  # Adjust the top space to make room for the suptitle
+# # Adjust layout to prevent overlap
+# plt.tight_layout()
+# plt.subplots_adjust(top=0.9)  # Adjust the top space to make room for the suptitle
 
-plt.suptitle(f'Performance boosting offset to the reference over time \n for the diagonal scenario', fontsize=13)
-plt.savefig(os.path.join(save_folder, "U_over_time.png"))
-plt.close()
+# plt.suptitle(f'Performance boosting offset to the reference over time \n for the diagonal scenario', fontsize=13)
+# plt.savefig(os.path.join(save_folder, "U_over_time.png"))
+# plt.close()
 
-v_verif = v_verif.cpu().detach().numpy()
-# Create a figure with a 2x2 grid of subplots
-fig, axs = plt.subplots(2, 1, figsize=(10, 7))
-axs[0].plot(np.array(range(u_verif.shape[1])), v_verif[0,:,0],label = "v_X")
-axs[0].plot(np.array(range(u_verif.shape[1])), v_verif[0,:,1],label = "v_Y")
-axs[0].set_title("Robot 1")
-axs[0].set_xlabel("Time (s)")
-axs[0].set_ylabel("v")
-axs[0].legend()
-axs[0].grid()
+# v_verif = v_verif.cpu().detach().numpy()
+# # Create a figure with a 2x2 grid of subplots
+# fig, axs = plt.subplots(2, 1, figsize=(10, 7))
+# axs[0].plot(np.array(range(u_verif.shape[1])), v_verif[0,:,0],label = "v_X")
+# axs[0].plot(np.array(range(u_verif.shape[1])), v_verif[0,:,1],label = "v_Y")
+# axs[0].set_title("Robot 1")
+# axs[0].set_xlabel("Time (s)")
+# axs[0].set_ylabel("v")
+# axs[0].legend()
+# axs[0].grid()
 
-axs[1].plot(np.array(range(u_verif.shape[1])), v_verif[0,:,2],label = "v_X")
-axs[1].plot(np.array(range(u_verif.shape[1])), v_verif[0,:,3],label = "v_Y")
-axs[1].set_title("Robot 2")
-axs[1].set_xlabel("Time (s)")
-axs[1].set_ylabel("v")
-axs[1].legend()
-axs[1].grid()
+# axs[1].plot(np.array(range(u_verif.shape[1])), v_verif[0,:,2],label = "v_X")
+# axs[1].plot(np.array(range(u_verif.shape[1])), v_verif[0,:,3],label = "v_Y")
+# axs[1].set_title("Robot 2")
+# axs[1].set_xlabel("Time (s)")
+# axs[1].set_ylabel("v")
+# axs[1].legend()
+# axs[1].grid()
 
-# Adjust layout to prevent overlap
-plt.tight_layout()
-plt.subplots_adjust(top=0.9)  # Adjust the top space to make room for the suptitle
+# # Adjust layout to prevent overlap
+# plt.tight_layout()
+# plt.subplots_adjust(top=0.9)  # Adjust the top space to make room for the suptitle
 
-plt.suptitle(f'Integral variable over time \n for the diagonal scenario', fontsize=13)
-plt.savefig(os.path.join(save_folder, "V_over_time.png"))
-plt.close()
+# plt.suptitle(f'Integral variable over time \n for the diagonal scenario', fontsize=13)
+# plt.savefig(os.path.join(save_folder, "V_over_time.png"))
+# plt.close()
 
 
 # print(u_verif[0,:,:])
