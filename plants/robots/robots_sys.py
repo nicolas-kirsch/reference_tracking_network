@@ -6,6 +6,69 @@ import torch
 import torch.nn.functional as F
 
 
+class RobotsDynamics(torch.nn.Module):
+    """
+    Pure closed-loop dynamics of the base tracking loop (plant + pre-stabilizing
+    state feedback K_p / integral action K_i), acting on the augmented state
+    eta = (x, v) where x is the plant state and v is the integrator state.
+
+    This module owns its own copy of the model parameters, so it can be
+    instantiated independently for the plant itself and for a controller's
+    internal model (IMC reconstruction), enabling model-mismatch experiments.
+    """
+    def __init__(self, n_agents, state_dim, in_dim, v_dim,
+                 A_lin, B, K_p, K_i, mask_tanh, mask, linear_plant, mass, b2):
+        super().__init__()
+
+        self.n_agents = n_agents
+        self.state_dim = state_dim
+        self.in_dim = in_dim
+        self.v_dim = v_dim
+        self.eta_dim = state_dim + v_dim
+        self.linear_plant = linear_plant
+        self.mass = mass
+        self.b2 = b2
+
+        self.register_buffer('A_lin', A_lin.detach().clone())
+        self.register_buffer('B', B.detach().clone())
+        self.register_buffer('K_p', K_p.detach().clone())
+        self.register_buffer('K_i', K_i.detach().clone())
+        self.register_buffer('mask_tanh', mask_tanh.detach().clone())
+        self.register_buffer('mask', mask.detach().clone())
+
+    def noiseless_forward(self, t, eta: torch.Tensor, u: torch.Tensor, xbar: torch.Tensor):
+        """
+        Pure closed-loop transition of the noise-free dynamics.
+
+        Args:
+            - eta (torch.Tensor): augmented state (x, v) at t. shape = (batch_size, 1, eta_dim)
+            - u (torch.Tensor): reference offset dxref at t. shape = (batch_size, 1, in_dim)
+            - xbar (torch.Tensor): nominal reference at t. shape = (batch_size, 1, in_dim)
+
+        Returns:
+            eta at t+1 (single tensor, no process noise added).
+        """
+        eta = eta.view(-1, 1, self.eta_dim)
+        x = eta[:, :, :self.state_dim]
+        v = eta[:, :, self.state_dim:]
+        dxref = u.view(-1, 1, self.in_dim)
+
+        e = (xbar + dxref) - x[:, :, [0, 1, 4, 5]]
+
+        # integrator is updated before computing u_base (uses v_plus, not v)
+        v_plus = v + e
+
+        u_base = -F.linear(x, self.K_p) - F.linear(v_plus, self.K_i)
+
+        if self.linear_plant:
+            f = F.linear(x, self.A_lin) + F.linear(u_base, self.B)
+        else:
+            tanh_q = torch.tanh(x[:, :, [2, 3, 6, 7]])
+            f = F.linear(x, self.A_lin) + F.linear(tanh_q, self.mask_tanh) + F.linear(u_base, self.B)
+
+        return torch.cat((f, v_plus), dim=-1)    # shape = (batch_size, 1, eta_dim)
+
+
 class RobotsSystem(torch.nn.Module):
     def __init__(self, linear_plant: bool, x_init=None, u_init=None, k: float=1.0, n_agents: int = 2):
         """
@@ -28,12 +91,16 @@ class RobotsSystem(torch.nn.Module):
         self.n_agents = n_agents
         self.state_dim = 4*self.n_agents
         self.in_dim = 2*self.n_agents
+        self.v_dim = 2*self.n_agents
+        self.eta_dim = self.state_dim + self.v_dim
 
         # initial state
         x_init = torch.zeros((1,self.state_dim)) if x_init is None else x_init.reshape(1, -1) # shape = (1, state_dim)
         self.register_buffer('x_init', x_init)
         u_init = torch.zeros(1, int(self.x_init.shape[1]/2)) if u_init is None else u_init.reshape(1, -1)   # shape = (1, in_dim)
         self.register_buffer('u_init', u_init)
+        eta_init = torch.cat((self.x_init, torch.zeros(1, self.v_dim)), dim=-1)   # shape = (1, eta_dim)
+        self.register_buffer('eta_init', eta_init)
 
         assert self.x_init.shape[1] == self.state_dim
         assert self.u_init.shape[1] == self.in_dim
@@ -134,75 +201,60 @@ class RobotsSystem(torch.nn.Module):
         self.register_buffer('mask', mask)
         self.register_buffer('mask_tanh', mask_tanh)
 
-    def A_nonlin(self, x):
-        assert not self.linear_plant
-        A3 = torch.norm(
-            x.view(-1, 2 * self.n_agents, 2) * self.mask, dim=-1, keepdim=True
-        )           # shape = (batch_size, 2 * n_agents, 1)
-        A3 = torch.kron(
-            A3, torch.ones(2, 1, device=A3.device)
-        )           # shape = (batch_size, 4 * n_agents, 1)
-        A3 = -self.b2 / self.mass * torch.diag_embed(
-            A3.squeeze(dim=-1), offset=0, dim1=-2, dim2=-1
-        )           # shape = (batch_size, 4 * n_agents, 4 * n_agents)
-        A = self.A_lin + self.h * A3
-        return A    # shape = (batch_size, 4 * n_agents, 4 * n_agents)
+        # dynamics module (owns its own copies of the parameters above, so that
+        # an independent instance can be handed to a controller as its internal model)
+        self.dynamics = RobotsDynamics(
+            n_agents=self.n_agents, state_dim=self.state_dim, in_dim=self.in_dim, v_dim=self.v_dim,
+            A_lin=self.A_lin, B=self.B, K_p=self.K_p, K_i=self.K_i,
+            mask_tanh=self.mask_tanh, mask=self.mask,
+            linear_plant=self.linear_plant, mass=self.mass, b2=self.b2,
+        )
 
-    def noiseless_forward(self, t, x: torch.Tensor,v:torch.Tensor, u: torch.Tensor, xbar: torch.Tensor):
+    def internal_model(self):
+        """
+        Build a fresh, independent RobotsDynamics instance with parameters
+        identical to this plant's (nominal case). Intended to be handed to a
+        controller as its internal model for IMC disturbance reconstruction.
+        """
+        return RobotsDynamics(
+            n_agents=self.n_agents, state_dim=self.state_dim, in_dim=self.in_dim, v_dim=self.v_dim,
+            A_lin=self.A_lin, B=self.B, K_p=self.K_p, K_i=self.K_i,
+            mask_tanh=self.mask_tanh, mask=self.mask,
+            linear_plant=self.linear_plant, mass=self.mass, b2=self.b2,
+        )
+
+    def noiseless_forward(self, t, eta: torch.Tensor, u: torch.Tensor, xbar: torch.Tensor):
         """
         forward of the plant without the process noise.
 
         Args:
-            - x (torch.Tensor): plant's state at t. shape = (batch_size, 1, state_dim)
+            - eta (torch.Tensor): plant's augmented state (x, v) at t. shape = (batch_size, 1, eta_dim)
             - u (torch.Tensor): plant's input at t. shape = (batch_size, 1, in_dim)
 
         Returns:
-            next state of the noise-free dynamics.
+            next augmented state of the noise-free dynamics.
         """
+        return self.dynamics.noiseless_forward(t, eta, u, xbar)
 
-        x = x.view(-1, 1, self.state_dim)
-        dxref = u.view(-1, 1, self.in_dim)
-        
-        e = (xbar+dxref) - x[:,:,[0, 1, 4, 5]]
-
-        v = v + e 
-
-        u = -F.linear(x,self.K_p) -F.linear(v,self.K_i)
-        
-        tanh_q = torch.tanh(x[:,:,[2, 3, 6, 7]])
-
-        if self.linear_plant:
-            # x is batched but A is not => can use F.linear to compute xA^T
-            #f = F.linear(x - xbar, self.A_lin) + F.linear(u, self.B) + xbar
-
-            f = F.linear(x, self.A_lin) + F.linear(u,self.B) 
-        else:
-            # A depends on x, hence is batched. perform batched matrix multiplication
-            f =  F.linear(x, self.A_lin) + F.linear(tanh_q, self.mask_tanh) + F.linear(u, self.B) 
-        #
-
-
-        return (f,v)    # shape = (batch_size, 1, state_dim)
-
-    def forward(self, t, x,v, u, w,xbar):
+    def forward(self, t, eta, u, w, xbar):
         """
         forward of the plant with the process noise.
 
         Args:
-            - x (torch.Tensor): plant's state at t. shape = (batch_size, 1, state_dim)
+            - eta (torch.Tensor): plant's augmented state (x, v) at t. shape = (batch_size, 1, eta_dim)
             - u (torch.Tensor): plant's input at t. shape = (batch_size, 1, in_dim)
             - w (torch.Tensor): process noise at t. shape = (batch_size, 1, state_dim)
 
         Returns:
-            next state.
+            next augmented state. Process noise only enters the plant state x,
+            never the integrator state v.
         """
+        eta_next = self.noiseless_forward(t, eta, u, xbar)
 
-        f,v = self.noiseless_forward(t, x,v, u,xbar)
+        w = w.view(-1, 1, self.state_dim)
+        w_padded = torch.cat((w, torch.zeros(w.shape[0], 1, self.v_dim, device=w.device, dtype=w.dtype)), dim=-1)
 
-        f = f + w.view(-1, 1, self.state_dim) 
-        
-
-        return (f,v)
+        return eta_next + w_padded
     # simulation
     def rollout(self, controller, data, train=False):
         """
@@ -221,35 +273,36 @@ class RobotsSystem(torch.nn.Module):
 
         controller.reset()
 
-        x = self.x_init.detach().clone().repeat(data.shape[0], 1, 1)
+        eta = self.eta_init.detach().clone().repeat(data.shape[0], 1, 1)
         u = self.u_init.detach().clone().repeat(data.shape[0], 1, 1)
-        v = torch.zeros(u.shape)
         w = data[:,:,:8]
         xbar=data[:,:,[8, 9, 12, 13]]
 
         # Simulate
         for t in range(data.shape[1]):
 
-            #x_k+1 = f(x_k,u_k, w_k, xbar_k)
-            x,v = self.forward(t=t, x=x, u=u, v=v, w=w[:, t:t+1, :],xbar= xbar[:, t:t+1, :])    # shape = (batch_size, 1, state_dim)
+            #eta_k+1 = f(eta_k,u_k, w_k, xbar_k)
+            eta = self.forward(t=t, eta=eta, u=u, w=w[:, t:t+1, :], xbar=xbar[:, t:t+1, :])    # shape = (batch_size, 1, eta_dim)
 
-            #u_k = c(x_k,xbar_k)
-            u = controller(x,v,xbar[:, t:t+1, :])                                       # shape = (batch_size, 1, in_dim)
+            #u_k = c(eta_k,xbar_k)
+            u = controller(eta, xbar[:, t:t+1, :])                                       # shape = (batch_size, 1, in_dim)
+
+            x = eta[:, :, :self.state_dim]
 
             if t == 0:
-                x_log, u_log, v_log = x, u,v
+                x_log, u_log, eta_log = x, u, eta
                 e_log = xbar[:, t:t+1, :] - x[:,:,[0,1,4,5]]
 
 
             else:
                 x_log = torch.cat((x_log, x), 1)
                 u_log = torch.cat((u_log, u), 1)
-                v_log = torch.cat((v_log, v), 1)
+                eta_log = torch.cat((eta_log, eta), 1)
                 e_log = torch.cat((e_log, xbar[:, t:t+1, :] - x[:,:,[0,1,4,5]]), 1)
 
         controller.reset()
         if not train:
             x_log, u_log = x_log.detach(), u_log.detach()
 
-        self.v_log = v_log.detach()
+        self.v_log = eta_log[:, :, self.state_dim:].detach()
         return x_log, e_log, u_log

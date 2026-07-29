@@ -2,14 +2,29 @@ import torch, os
 from scipy.stats import multivariate_normal # TODO: use something compatible with tensors
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from datetime import datetime
 import imageio
+
+# extended past 2 entries so per-agent dotted/solid color pairs stay
+# distinguishable for n_agents > 2 (e.g. the networked robots experiments)
+AGENT_COLORS = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple',
+                'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
+
 
 def plot_trajectories(
     x, xbar, n_agents, save_folder, text="", save=True, filename='', T=100,
     dots=False, circles=False, axis=True, min_dist=1, f=5,
-    obstacle_centers=None, obstacle_covs=None
+    obstacle_centers=None, obstacle_covs=None, x_compare=None, compare_label='base control only'
 ):
+    """
+    Args:
+        - x_compare: optional tensor, same shape/layout as x - plotted as a
+          dotted line per agent (same color as that agent's solid line), e.g.
+          to compare the actual closed-loop trajectory against what the base
+          tracking loop alone would produce (dxref=0, no learned controller).
+        - compare_label: legend label for the x_compare dotted line.
+    """
     filename = 'trajectories.pdf' if filename == '' else filename
 
     # fig = plt.figure(f)
@@ -32,31 +47,37 @@ def plot_trajectories(
         ax.pcolormesh(xx, yy, zz, cmap='Greys', vmin=z_min, vmax=z_max, shading='gouraud')
 
     ax.set_title(text)
-    colors = ['tab:blue', 'tab:orange']
+    colors = AGENT_COLORS
     for i in range(n_agents):
         ax.plot(
             x[:T+1,4*i].detach().cpu(), x[:T+1,4*i+1].detach().cpu(),
-            color=colors[i%2], linewidth=1
+            color=colors[i%len(colors)], linewidth=1
         )
         ax.plot(
             x[T:,4*i].detach().cpu(), x[T:,4*i+1].detach().cpu(),
             color='k', linewidth=0.1, linestyle='dotted', dashes=(3, 15)
         )
+    if x_compare is not None:
+        for i in range(n_agents):
+            ax.plot(
+                x_compare[:T+1,4*i].detach().cpu(), x_compare[:T+1,4*i+1].detach().cpu(),
+                color=colors[i%len(colors)], linewidth=1, linestyle=':'
+            )
     for i in range(n_agents):
         ax.plot(
             x[0,4*i].detach().cpu(), x[0,4*i+1].detach().cpu(),
-            color=colors[i%2], marker='8'
+            color=colors[i%len(colors)], marker='8'
         )
         ax.plot(
             xbar[4*i].detach().cpu(), xbar[4*i+1].detach().cpu(),
-            color=colors[i%2], marker='*', markersize=10
+            color=colors[i%len(colors)], marker='*', markersize=10
         )
 
     if dots:
         for i in range(n_agents):
-            ax.plot(  
+            ax.plot(
                 x[:T+1,4*i].detach().cpu(), x[:T+1,4*i+1].detach().cpu(),
-                color=colors[i%2], linewidth=1, marker = "x"
+                color=colors[i%len(colors)], linewidth=1, marker = "x"
             )
 
     if circles:
@@ -64,9 +85,15 @@ def plot_trajectories(
             r = min_dist/2
             circle = ax.Circle(
                 (x[T, 4*i].detach().cpu(), x[T, 4*i+1].detach().cpu()),
-                r, color=colors[i%2], alpha=0.5, zorder=10
+                r, color=colors[i%len(colors)], alpha=0.5, zorder=10
             )
             ax.add_patch(circle)
+    if x_compare is not None:
+        legend_handles = [
+            Line2D([0], [0], color='gray', linestyle='-', label='with learned offset'),
+            Line2D([0], [0], color='gray', linestyle=':', label=compare_label),
+        ]
+        ax.legend(handles=legend_handles, loc='best')
     ax.axes.xaxis.set_visible(axis)
     ax.axes.yaxis.set_visible(axis)
     if save:
@@ -75,6 +102,50 @@ def plot_trajectories(
             format='pdf'
         )
         plt.close()
+    else:
+        plt.show()
+
+
+def plot_input_norm(u, n_agents, save_folder, text="", save=True, filename='', T=None,
+                     symbol=r'\delta x_{\mathrm{ref}}'):
+    """
+    Plot ||u^(i)_t||_2 per agent over time - a quick visual check of the l_p
+    nature of the reference offset dxref (u fed to RobotDynamics IS dxref,
+    the offset added to the nominal setpoint xbar - see CLAUDE.md's
+    "Reference governor structure"): since dxref is driven by a disturbance
+    reconstruction that is itself l_p (e.g. nonzero only at t=0 in the
+    nominal case, no process noise afterward), it should decay towards 0
+    rather than staying persistently large.
+
+    Args:
+        - u: tensor of shape (T_total, in_dim), in_dim = 2*n_agents, layout
+          [u1_x,u1_y, u2_x,u2_y, ...] (one rollout, no batch dim).
+        - T: number of initial time steps to plot. Defaults to all of u.
+        - symbol: LaTeX symbol used for the y-axis label. Defaults to the
+          reference-offset dxref, which is what "u" is in this codebase.
+    """
+    filename = 'u_norm.pdf' if filename == '' else filename
+    T = u.shape[0] if T is None else min(T, u.shape[0])
+    t = torch.arange(T)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for i in range(n_agents):
+        u_i = u[:T, 2 * i:2 * i + 2]
+        norm_i = torch.norm(u_i, dim=-1).detach().cpu()
+        ax.plot(t, norm_i, linewidth=1.5, label=f'robot {i + 1}')
+
+    ax.set_xlabel(r'$t$')
+    ax.set_ylabel(r'$\|' + symbol + r'^{(i)}(t)\|_2$')
+    ax.set_title(text)
+    ax.legend()
+    ax.grid(True)
+
+    if save:
+        fig.savefig(
+            os.path.join(save_folder, filename),
+            format='pdf'
+        )
+        plt.close(fig)
     else:
         plt.show()
 

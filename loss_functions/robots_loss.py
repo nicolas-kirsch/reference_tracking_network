@@ -39,7 +39,7 @@ class RobotsLoss(LQLossFH):
         # mask
         self.mask = torch.logical_not(torch.eye(self.n_agents, device=device))   # shape = (n_agents, n_agents)
 
-    def forward(self, xs, us,es):
+    def forward(self, xs, us, es):
         """
         Compute loss.
 
@@ -50,17 +50,29 @@ class RobotsLoss(LQLossFH):
         Return:
             - loss of shape (1, 1).
         """
+        return self.components(xs, us, es)['total']
+
+    def components(self, xs, us, es):
+        """
+        Same inputs/computation as forward(), but returns the weighted terms
+        making up the loss individually, so callers can log the breakdown
+        instead of just the combined scalar.
+
+        NOTE: 'tracking'/'speed'/'u'/'collision'/'obstacle' below are the
+        PRE-bound per-term values; the sat_bound/loss_bound rescaling (when
+        set) is applied to their sum as a whole, not per term, so they only
+        sum exactly to 'total' when both are None (the default, and what
+        every current run script uses).
+
+        Returns:
+            dict with keys 'tracking', 'speed', 'u', 'collision', 'obstacle',
+            'total' (each a scalar tensor of shape (1, 1)).
+        """
         # batch
         x_batch = xs.reshape(*xs.shape, 1)
         u_batch = us.reshape(*us.shape, 1)
         e_batch = es.reshape(*es.shape, 1)
-        
-        """x_bar = self.xbar.reshape(*self.xbar.shape,1)
-        # loss states = 1/T sum_{t=1}^T (x_t-xbar)^T Q (x_t-xbar)
-        if self.xbar is not None:
-            x_batch_centered = x_batch - x_bar
-        else:
-            x_batch_centered = x_batch"""
+
         speed = x_batch[:,:,[2,3,6,7]]
 
         xTQx = torch.matmul(
@@ -73,7 +85,7 @@ class RobotsLoss(LQLossFH):
             torch.matmul(speed.transpose(-1, -2), self.Q),
             speed
         )   # shape = (S, T, 1, 1)
-        loss_speed = torch.sum(sTQs, 1) / speed.shape[1] 
+        loss_speed = torch.sum(sTQs, 1) / speed.shape[1]
 
         # loss control actions = 1/T sum_{t=1}^T u_t^T R u_t
         uTRu = self.R * torch.matmul(
@@ -83,12 +95,12 @@ class RobotsLoss(LQLossFH):
         loss_u = torch.sum(uTRu, 1) / x_batch.shape[1]    # average over the time horizon. shape = (S, 1, 1)
         # collision avoidance loss
         if self.alpha_col is None:
-            loss_ca = 0
+            loss_ca = torch.zeros_like(loss_x)
         else:
             loss_ca = self.alpha_col * self.f_loss_ca(x_batch)       # shape = (S, 1, 1)
         # obstacle avoidance loss
         if self.alpha_obst is None:
-            loss_obst = 0
+            loss_obst = torch.zeros_like(loss_x)
         else:
             loss_obst = self.alpha_obst * self.f_loss_obst(x_batch) # shape = (S, 1, 1)
         # sum up all losses
@@ -99,8 +111,15 @@ class RobotsLoss(LQLossFH):
         if self.loss_bound is not None:
             loss_val = self.loss_bound * loss_val           # shape = (S, 1, 1)
         # average over the samples
-        loss_val = torch.sum(loss_val, 0)/xs.shape[0]       # shape = (1, 1)
-        return loss_val
+        total = torch.sum(loss_val, 0)/xs.shape[0]       # shape = (1, 1)
+        return {
+            'tracking': torch.sum(loss_x, 0) / xs.shape[0],
+            'speed': torch.sum(loss_speed, 0) / xs.shape[0],
+            'u': torch.sum(loss_u, 0) / xs.shape[0],
+            'collision': torch.sum(loss_ca, 0) / xs.shape[0],
+            'obstacle': torch.sum(loss_obst, 0) / xs.shape[0],
+            'total': total,
+        }
 
     def f_loss_obst(self, x_batched):
         """

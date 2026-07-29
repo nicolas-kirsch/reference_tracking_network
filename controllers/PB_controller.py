@@ -22,7 +22,7 @@ class PerfBoostController(nn.Module):
         the last output ("self.last_output").
     """
     def __init__(
-        self, noiseless_forward, input_init: torch.Tensor, output_init: torch.Tensor,
+        self, internal_model, input_init: torch.Tensor, output_init: torch.Tensor,
         # acyclic REN properties
         dim_internal: int, dim_nl: int,
         initialization_std: float = 0.5,
@@ -30,13 +30,20 @@ class PerfBoostController(nn.Module):
         ren_internal_state_init=None,
         # misc
         output_amplification: float=20,
+        imc_tol: float = 1e-3,
     ):
         """
          Args:
-            noiseless_forward: system dynamics without process noise. can be TV.
-            input_init (torch.Tensor): initial input to the controller.
+            internal_model: independent module implementing the system dynamics without
+                process noise (eta_t, u_t, xbar_t) -> eta_{t+1}. Can be TV. Used for the
+                IMC disturbance reconstruction; in the nominal case its parameters match
+                the plant's exactly, but it is a separate instance (enables model-mismatch
+                experiments).
+            input_init (torch.Tensor): initial augmented state (x, v) of the plant.
             output_init (torch.Tensor): initial output from the controller before anything is calculated.
             output_amplification (float): TODO
+            imc_tol (float): tolerance used by `check_imc_exactness` to validate that the
+                v-components of the reconstructed disturbance are ~0 (nominal IMC exactness).
             * the following are the same as AcyclicREN args:
             dim_internal (int): Internal state (x) dimension. This state evolves with contraction properties.
             dim_nl (int): Dimension of the input ("v") and ouput ("w") of the nonlinear static block of REN.
@@ -48,16 +55,20 @@ class PerfBoostController(nn.Module):
         super().__init__()
 
         self.output_amplification = output_amplification
+        self.imc_tol = imc_tol
+
+        # define the system dynamics without process noise (independent internal model)
+        self.internal_model = internal_model
+        self.state_dim = internal_model.state_dim
 
         # set initial conditions
         self.input_init = input_init.reshape(1, -1)
         self.output_init = output_init.reshape(1, -1)
-        self.vg_init = torch.zeros(1,4).reshape(1,-1)
         self.xbar_init = torch.zeros(1,4).reshape(1,-1)
 
 
-        # set dimensions
-        self.dim_in = self.input_init.shape[-1]
+        # set dimensions: REN/MLP only ever see the x-part of the reconstructed disturbance
+        self.dim_in = self.state_dim
         self.dim_out = self.output_init.shape[-1]
 
         # define the REN
@@ -70,9 +81,6 @@ class PerfBoostController(nn.Module):
 
         self.MLP = MLP(dim_out = self.dim_out)
 
-        # define the system dynamics without process noise
-        self.noiseless_forward = noiseless_forward
-
         self.reset()
 
     def reset(self):
@@ -80,54 +88,66 @@ class PerfBoostController(nn.Module):
         set time to 0 and reset to initial state.
         """
         self.t = 0  # time
-        self.last_input = self.input_init.detach().clone()
+        self.last_eta = self.input_init.detach().clone()
         self.last_output = self.output_init.detach().clone()
-        self.last_vg = self.vg_init.detach().clone()
         self.last_xbar = self.xbar_init.detach().clone()
+        self.last_w_hat_v = None    # v-components of the last reconstructed disturbance (for IMC checks)
 
         self.c_ren.x = self.c_ren.init_x    # reset the REN state to the initial value
 
-    def forward(self, input_t: torch.Tensor,vg:torch.Tensor,xbar:torch.Tensor,):
+    def forward(self, eta_t: torch.Tensor, xbar_t: torch.Tensor):
         """
         Forward pass of the controller.
 
         Args:
-            input_t (torch.Tensor): Input with the size of (batch_size, 1, self.dim_in).
-            NOTE: when used in closed-loop, "input_t" is the measured states.
+            eta_t (torch.Tensor): measured augmented plant state (x, v) with size
+                (batch_size, 1, self.state_dim + v_dim).
+            xbar_t (torch.Tensor): nominal reference at t.
 
         Return:
             y_out (torch.Tensor): Output with (batch_size, 1, self.dim_out).
         """
 
-
-        # apply noiseless forward to get noise less input (noise less state of the plant)
-        u_noiseless, _ = self.noiseless_forward(
+        # apply the internal model to get the noiseless prediction of eta_t
+        eta_noiseless = self.internal_model.noiseless_forward(
             t=self.t,
-            x=self.last_input,  # last input to the controller is the last state of the plant
-            u=self.last_output, 
-            v=self.last_vg,
-            xbar = self.last_xbar  # last output of the controller is the last input to the plant
-        )  # shape = (self.batch_size, 1, self.dim_in)
+            eta=self.last_eta,     # last measured augmented state
+            u=self.last_output,    # last output of the controller is the last input to the plant
+            xbar=self.last_xbar,
+        )  # shape = (batch_size, 1, self.state_dim + v_dim)
 
-        # reconstruct the noise
-        w_ = input_t - u_noiseless # shape = (self.batch_size, 1, self.dim_in)
+        # reconstruct the disturbance: w_hat = eta_t - internal_model(...)
+        w_hat = eta_t - eta_noiseless   # shape = (batch_size, 1, self.state_dim + v_dim)
+        w_hat_x = w_hat[:, :, :self.state_dim]
+        self.last_w_hat_v = w_hat[:, :, self.state_dim:]
 
         # apply REN
-        output_REN = self.c_ren.forward(w_)
-        mlp_input = torch.cat((w_, xbar), dim=2)
-        mlp_input = mlp_input.view(input_t.shape[0],1, -1)
-   
+        output_REN = self.c_ren.forward(w_hat_x)
+        mlp_input = torch.cat((w_hat_x, xbar_t), dim=2)
+        mlp_input = mlp_input.view(eta_t.shape[0],1, -1)
 
-        # apply MLP on reference plus disturbance 
+
+        # apply MLP on reference plus disturbance
         output_MLP = self.MLP.forward(mlp_input)
 
         output = output_REN*output_MLP*self.output_amplification   # shape = (self.batch_size, 1, self.dim_out)
         #output = torch.clamp(output,min = -10,max = 10)
         # update internal states
-        self.last_input, self.last_output, self.last_xbar = input_t, output, xbar
-        self.last_vg = vg
+        self.last_eta, self.last_output, self.last_xbar = eta_t, output, xbar_t
         self.t += 1
         return output
+
+    def check_imc_exactness(self, tol=None):
+        """
+        Assert that the v-components of the last reconstructed disturbance are ~0,
+        as required by exact IMC reconstruction in the nominal (no model-mismatch) case
+        (process noise only ever enters the plant state x, never the integrator state v).
+        """
+        tol = self.imc_tol if tol is None else tol
+        assert self.last_w_hat_v is not None, "no forward() call yet to check"
+        max_dev = torch.max(torch.abs(self.last_w_hat_v)).item()
+        assert max_dev < tol, f"IMC reconstruction violated: max |w_hat_v| = {max_dev} >= {tol}"
+        return max_dev
 
     # setters and getters
     def get_parameter_shapes(self):

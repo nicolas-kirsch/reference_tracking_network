@@ -14,6 +14,11 @@ from loss_functions import RobotsLoss
 from utils.assistive_functions import WrapLogger
 
 
+def format_loss_components(parts):
+    """'tracking: 1.23 -- speed: 0.45 -- ...' from a RobotsLoss.components() dict."""
+    return ' -- '.join(f'{name}: {value.item():.4f}' for name, value in parts.items() if name != 'total')
+
+
 def main():
     """
     Train and evaluate a performance boosting controller on the robots reference-tracking task.
@@ -116,8 +121,8 @@ def main():
 
 # ------------ 3. Controller ------------
     ctl = PerfBoostController(
-        noiseless_forward=sys.noiseless_forward,
-        input_init=sys.x_init,
+        internal_model=sys.internal_model(),
+        input_init=sys.eta_init,
         output_init=sys.u_init,
         dim_internal=args.dim_internal,
         dim_nl=args.dim_nl,
@@ -231,9 +236,10 @@ def main():
                     x_log_valid, e_log_valid, u_log_valid = sys.rollout(
                         controller=ctl, data=valid_data, train=False,
                     )
-                    # loss of the valid data
-                    loss_valid = loss_fn.forward(x_log_valid, u_log_valid, e_log_valid)
-                msg += ' ---||--- validation loss: %.2f' % (loss_valid.item())
+                    # loss of the valid data, split per term
+                    loss_valid_parts = loss_fn.components(x_log_valid, u_log_valid, e_log_valid)
+                    loss_valid = loss_valid_parts['total']
+                msg += ' ---||--- validation loss: %.2f (%s)' % (loss_valid.item(), format_loss_components(loss_valid_parts))
                 # compare with the best valid loss
                 if loss_valid.item() < best_valid_loss:
                     best_valid_loss = loss_valid.item()
@@ -319,6 +325,15 @@ def main():
         T=t_ext,
         obstacle_centers=loss_fn.obstacle_centers,
         obstacle_covs=loss_fn.obstacle_covs,
+    )
+
+    plot_input_norm(
+        u_verif[0, :, :],  # remove extra dim due to batching
+        n_agents=sys.n_agents,
+        save_folder=save_folder,
+        filename='dxref_norm_diag_trained.pdf',
+        text='Reference offset $\\delta x_{ref}$ norm per robot (trained controller - diagonal scenario)',
+        T=t_ext,
     )
 
     plot_trajectories(

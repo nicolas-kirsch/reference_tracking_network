@@ -162,4 +162,5 @@ cython_debug/
 .idea/
 
 experiments/*/saved_results/
+networked_robots/saved_results/
 *.pkl
