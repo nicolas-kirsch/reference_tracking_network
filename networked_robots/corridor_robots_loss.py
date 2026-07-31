@@ -88,7 +88,7 @@ class CorridorRobotsLoss:
         xTQx = torch.matmul(torch.matmul(e_batch.transpose(-1, -2), self.Q), e_batch)     # (S, T, 1, 1)
         loss_x = torch.sum(xTQx, 1) / e_batch.shape[1]
 
-        sTQs = torch.matmul(torch.matmul(speed.transpose(-1, -2), self.Q), speed)        # (S, T, 1, 1)
+        sTQs = torch.matmul(torch.matmul(speed.transpose(-1, -2), self.Qs), speed)        # (S, T, 1, 1)
         loss_speed = torch.sum(sTQs, 1) / speed.shape[1]
 
         uTRu = self.alpha_u * torch.matmul(u_batch.transpose(-1, -2), u_batch)            # (S, T, 1, 1)
@@ -187,6 +187,23 @@ class CorridorRobotsLoss:
         col_matrix = (0.0001 < distance_sq) * (distance_sq < self.min_dist ** 2)
         n_coll = col_matrix.sum().item()
         return n_coll / 2    # each collision is counted twice
+
+    def count_colliding_trajectories(self, x_batch):
+        """
+        Count the number of rollouts containing at least one collision.
+
+        Args:
+            - x_batch: tensor of shape (S, T, state_dim) or (S, T, state_dim, 1)
+                concatenated states of all agents on the third dimension.
+
+        Return:
+            - number of rollouts with at least one collision.
+        """
+        if len(x_batch.shape) == 3:
+            x_batch = x_batch.reshape(*x_batch.shape, 1)
+        distance_sq = self.get_pairwise_distance_sq(x_batch)
+        col_matrix = (0.0001 < distance_sq) * (distance_sq < self.min_dist ** 2)
+        return col_matrix.flatten(start_dim=1).any(dim=1).sum().item()
 
     def get_pairwise_distance_sq(self, x_batch):
         """

@@ -1,6 +1,20 @@
 import argparse, math
 
 
+def str2bool(value):
+    """
+    argparse type for real boolean flags. `type=bool` is a trap: it calls bool() on the
+    raw string, so '--flag False' yields True (bool('False') is True).
+    """
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ('true', 't', 'yes', 'y', '1'):
+        return True
+    if value.lower() in ('false', 'f', 'no', 'n', '0'):
+        return False
+    raise argparse.ArgumentTypeError('expected a boolean value, got %r' % value)
+
+
 # argument parser
 def argument_parser():
     parser = argparse.ArgumentParser(description="Robots minimal experiment.")
@@ -24,7 +38,7 @@ def argument_parser():
     parser.add_argument('--cont-init-std', type=float, default=0.1, help='Initialization std for controller params. Default is 0.1.')
     parser.add_argument('--dim-internal', type=int, default=8, help='Dimension of the internal state of the controller. Adjusts the size of the linear part of REN. Default is 8.')
     parser.add_argument('--dim-nl', type=int, default=8, help='size of the non-linear part of REN. Default is 8.')
-
+    parser.add_argument('--split', type=str2bool, nargs='?', const=True, default=False, help='Split the REN and MLP into two parts for different outputs. Default is False.')
     # loss
     parser.add_argument('--alpha-u', type=float, default=0.1/400, help='Weight of the loss due to control input "u". Default is 0.1/400.')  #TODO: 400 is output_amplification^2
     parser.add_argument('--alpha-col', type=float, default=100, help='Weight of the collision avoidance loss. Default is 100 if "col-av" is True, else None.')
@@ -86,6 +100,10 @@ def print_args(args):
 
     msg += '\n[INFO] Controller: dimension of the internal state: %i' % args.dim_internal
     msg += ' -- dim_nl: %i' % args.dim_nl + ' -- cont_init_std: %.2f'% args.cont_init_std
+    msg += ' -- split (one REN/MLP pair per agent): ' + str(args.split)
+
+    msg += '\n[INFO] Experiment: random_seed: %i' % args.random_seed + ' -- epochs: %i' % args.epochs
+    msg += ' -- log_epoch: %i' % args.log_epoch
 
     msg += '\n[INFO] Loss:  alpha_u: %.6f' % args.alpha_u
     msg += ' -- alpha_col: %.f' % args.alpha_col if args.col_av else ' -- no collision avoidance'

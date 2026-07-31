@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -I{} echo {})",
+      "Bash(python networked_robots/run_networked_control.py --n-agents 2 --epochs 1 --num-rollouts 2 --num-test-samples 2 --horizon 20 --plot-samples 1)",
+      "Bash(python3 networked_robots/run_networked_control.py --n-agents 2 --epochs 1 --num-rollouts 2 --num-test-samples 2 --horizon 20 --plot-samples 1)",
+      "Bash(python3 networked_robots/run_networked_control_windowed.py --n-agents 2 --epochs 1 --num-rollouts 2 --num-test-samples 2 --horizon 20 --plot-samples 1)",
+      "Bash(python3 networked_robots/run_networked_control_corridor.py --n-agents 2 --epochs 1 --num-rollouts 2 --num-test-samples 2 --horizon 20 --plot-samples 1)",
+      "Bash(python3 networked_robots/run_networked_control_corridor.py --n-agents 2 --epochs 2 --num-rollouts 2 --num-test-samples 2 --horizon 30)",
+      "Bash(python3 experiments/robots/run.py --epochs 1 --num-rollouts 2 --horizon 20)",
+      "Bash(python3 networked_robots/run_networked_control_corridor.py --n-agents 2 --epochs 2 --num-rollouts 2 --num-test-samples 2 --horizon 20 --random-seed 5)",
+      "Bash(python3 networked_robots/run_networked_control_corridor.py --n-agents 2 --epochs 2 --num-rollouts 2 --num-test-samples 2 --horizon 20 --random-seed 5 --central-like True)",
+      "Bash(python3 experiments/robots/run.py --epochs 2 --num-rollouts 2 --horizon 20)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(python -)",
+      "Bash(python3 -)",
+      "Bash(timeout 420 python3 experiments/robots/run.py --epochs 4 --num-rollouts 4 --horizon 20)"
+    ]
+  }
+}

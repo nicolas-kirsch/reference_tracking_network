@@ -127,7 +127,7 @@ def main():
         dim_internal=args.dim_internal,
         dim_nl=args.dim_nl,
         initialization_std=args.cont_init_std,
-        output_amplification=20,
+        output_amplification=20,split = args.split
     ).to(device)
 
 
@@ -258,10 +258,21 @@ def main():
 
 # ------ 7. Save and evaluate the trained model ------
 # save
-    res_dict = ctl.c_ren.state_dict()
-    # minimal metadata to make the checkpoint self-describing
+    # FULL controller state: the REN (M1, the l_p factor) AND the MLP (M2, the
+    # bounded context factor). Saving only ctl.c_ren.state_dict() - as this did
+    # previously - silently dropped the MLP's trained parameters, so the
+    # checkpoint could not reconstruct the trained controller at all (M2 would
+    # come back randomly initialized).
+    res_dict = {'controller': ctl.state_dict()}
+    # everything needed to rebuild and redeploy this controller without re-reading
+    # this script: the plant/controller hyperparameters (args), the one
+    # architecture constant not exposed as a flag (output_amplification), the
+    # loss weighting, and the obstacle geometry the run was actually trained on.
     res_dict['Q'] = Q
     res_dict['args'] = vars(args)
+    res_dict['output_amplification'] = ctl.output_amplification
+    res_dict['obstacle_centers'] = [c.detach().cpu() for c in obstacle_centers]
+    res_dict['obstacle_covs'] = [c.detach().cpu() for c in obstacle_covs]
     filename = os.path.join(save_folder, 'trained_controller' + '.pt')
     torch.save(res_dict, filename)
     logger.info('[INFO] saved trained model.')
@@ -278,7 +289,9 @@ def main():
 # count collisions
     if args.col_av:
         num_col = loss_fn.count_collisions(x_log)
+        num_col_traj = loss_fn.count_colliding_trajectories(x_log)
         msg += ' -- Number of collisions = %i' % num_col
+        msg += ' -- Number of trajectories with collisions = %i/%i' % (num_col_traj, x_log.shape[0])
     logger.info(msg)
 
 # evaluate on the test data
@@ -294,7 +307,9 @@ def main():
 # count collisions
     if args.col_av:
         num_col = loss_fn.count_collisions(x_log)
+        num_col_traj = loss_fn.count_colliding_trajectories(x_log)
         msg += ' -- Number of collisions = %i' % num_col
+        msg += ' -- Number of trajectories with collisions = %i/%i' % (num_col_traj, x_log.shape[0])
     logger.info(msg)
 
 

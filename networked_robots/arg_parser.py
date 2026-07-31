@@ -15,6 +15,15 @@ def argument_parser():
     parser.add_argument('--num-test-samples', type=int, default=50, help='Number of rollouts in the held-out test set. Default is 50.')
     parser.add_argument('--std-init-plant', type=float, default=0.2, help='std of the plant initial conditions. Default is 0.2.')
     parser.add_argument('--min-dist', type=float, default=2.0, help='Minimum pairwise distance enforced when sampling initial positions and targets. Default is 2.0.')
+    parser.add_argument('--central-data', action='store_true',
+                        help='Sample initial conditions and targets from the same distributions as the '
+                             'CENTRALIZED experiment (experiments/robots/run.py) instead of this script\'s, so '
+                             'the two runs are comparable. Nominal formation becomes the centralized fixed '
+                             'x0=[4,0,0,0, 0,0,0,0] (still perturbed per rollout by --std-init-plant), and '
+                             'targets are drawn in x=[-1,5] / y=[4,4.1] with min pairwise distance 2.0; '
+                             '--min-dist and the x0/target intervals are ignored. Requires --n-agents 2. '
+                             'NOTE: this script\'s loss (tracking + energy) is not the centralized one - for a '
+                             'loss-comparable run use run_networked_control_corridor.py.')
 
     # plant
     parser.add_argument('--spring-const', type=float, default=1.0, help='Spring constant of the pre-stabilizing base loop. Default is 1.0.')
@@ -54,6 +63,8 @@ def print_args(args):
     msg += ' -- num_test_samples: %i' % args.num_test_samples
     msg += ' -- std_ini: %.2f' % args.std_init_plant + ' -- time horizon: %i' % args.horizon
     msg += ' -- min_dist: %.2f' % args.min_dist
+    if args.central_data:
+        msg += ' -- CENTRALIZED x0/target distributions (min_dist / intervals ignored)'
 
     msg += '\n[INFO] Plant: spring constant: %.2f' % args.spring_const + ' -- use linearized plant: ' + str(args.linearize_plant)
 

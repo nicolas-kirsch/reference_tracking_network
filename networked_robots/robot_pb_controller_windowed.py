@@ -73,6 +73,21 @@ class RobotPBControllerWindowed(RobotPBController):
 
         self.reset()
 
+    def reset(self):
+        """
+        Own copy of the pre-refactor RobotPBController.reset() body - kept
+        self-contained (not inherited) since RobotPBController no longer
+        owns eta/output/t bookkeeping (that moved to PBControllerNetwork's
+        joint reconstruction step; this class keeps the old per-controller
+        pattern deliberately, see class docstring).
+        """
+        self.t = 0
+        self.last_eta = self.eta_init.detach().clone()
+        self.last_output = self.output_init.detach().clone()
+        self.last_w_hat_v = None    # v-components of the last reconstructed disturbance (for IMC checks)
+
+        self.c_ren.x = self.c_ren.init_x
+
     def forward(self, eta_t: torch.Tensor, xbar_t: torch.Tensor, z_neighbors: torch.Tensor):
         """
         Args:

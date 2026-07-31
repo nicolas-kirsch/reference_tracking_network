@@ -187,6 +187,24 @@ class RobotsLoss(LQLossFH):
         n_coll = col_matrix.sum().item()    # all collisions at all times and across all rollouts
         return n_coll/2                     # each collision is counted twice
 
+    def count_colliding_trajectories(self, x_batch):
+        """
+        Count the number of rollouts containing at least one collision.
+
+        Args:
+            - x_batched: tensor of shape (S, T, state_dim, 1)
+                concatenated states of all agents on the third dimension.
+
+        Return:
+            - number of rollouts with at least one collision.
+        """
+        if len(x_batch.shape) == 3:
+            x_batch = x_batch.reshape(*x_batch.shape, 1)
+        distance_sq = self.get_pairwise_distance_sq(x_batch)  # shape = (S, T, n_agents, n_agents)
+        col_matrix = (0.0001 < distance_sq) * (distance_sq < self.min_dist ** 2)  # Boolean collision matrix of shape (S, T, n_agents, n_agents)
+        col_per_rollout = col_matrix.flatten(start_dim=1).any(dim=1)  # shape = (S,)
+        return col_per_rollout.sum().item()
+
     def get_pairwise_distance_sq(self, x_batch):
         """
         Squared distance between pairwise agents.

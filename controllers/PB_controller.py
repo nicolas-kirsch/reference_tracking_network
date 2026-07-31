@@ -5,6 +5,8 @@ import math
 import time
 
 from argparse import Namespace
+from collections import OrderedDict
+from copy import deepcopy
 from config import device
 from .contractive_ren import ContractiveREN
 from .MLP import MLP
@@ -31,6 +33,7 @@ class PerfBoostController(nn.Module):
         # misc
         output_amplification: float=20,
         imc_tol: float = 1e-3,
+        split = False
     ):
         """
          Args:
@@ -71,15 +74,32 @@ class PerfBoostController(nn.Module):
         self.dim_in = self.state_dim
         self.dim_out = self.output_init.shape[-1]
 
+        # with split=True each branch produces only its own half of the output channels
+        # (agent 0 from branch 1, agent 1 from branch 2), so nothing is computed and discarded
+        self.split = split
+        if split:
+            assert self.dim_out % 2 == 0, \
+                'split=True needs an even output dim, got %d' % self.dim_out
+        self.dim_out_branch = self.dim_out // 2 if split else self.dim_out
+
         # define the REN
         self.c_ren = ContractiveREN(
-            dim_in=self.dim_in, dim_out=self.dim_out, dim_internal=dim_internal,
+            dim_in=self.dim_in, dim_out=self.dim_out_branch, dim_internal=dim_internal,
             dim_nl=dim_nl, initialization_std=initialization_std,
             internal_state_init=ren_internal_state_init,
             posdef_tol=posdef_tol, contraction_rate_lb=contraction_rate_lb
         ).to(device)
 
-        self.MLP = MLP(dim_out = self.dim_out)
+        self.MLP = MLP(dim_out = self.dim_out_branch)
+
+        if split:
+            self.c_ren_2 = ContractiveREN(
+                dim_in=self.dim_in, dim_out=self.dim_out_branch, dim_internal=dim_internal,
+                dim_nl=dim_nl, initialization_std=initialization_std,
+                internal_state_init=ren_internal_state_init,
+                posdef_tol=posdef_tol, contraction_rate_lb=contraction_rate_lb
+            ).to(device)
+            self.MLP_2 = MLP(dim_out = self.dim_out_branch)
 
         self.reset()
 
@@ -94,7 +114,8 @@ class PerfBoostController(nn.Module):
         self.last_w_hat_v = None    # v-components of the last reconstructed disturbance (for IMC checks)
 
         self.c_ren.x = self.c_ren.init_x    # reset the REN state to the initial value
-
+        if self.split:
+            self.c_ren_2.x = self.c_ren_2.init_x    # reset the REN state to the initial value
     def forward(self, eta_t: torch.Tensor, xbar_t: torch.Tensor):
         """
         Forward pass of the controller.
@@ -123,14 +144,23 @@ class PerfBoostController(nn.Module):
 
         # apply REN
         output_REN = self.c_ren.forward(w_hat_x)
+        if self.split:
+            output_REN_2 = self.c_ren_2.forward(w_hat_x)
         mlp_input = torch.cat((w_hat_x, xbar_t), dim=2)
         mlp_input = mlp_input.view(eta_t.shape[0],1, -1)
 
 
         # apply MLP on reference plus disturbance
         output_MLP = self.MLP.forward(mlp_input)
+        if self.split:
+            output_MLP_2 = self.MLP_2.forward(mlp_input)
 
-        output = output_REN*output_MLP*self.output_amplification   # shape = (self.batch_size, 1, self.dim_out)
+        output = output_REN*output_MLP*self.output_amplification   # shape = (batch_size, 1, self.dim_out_branch)
+
+        if self.split:
+            output_2 = output_REN_2*output_MLP_2*self.output_amplification
+            # concatenate the two halves: branch 1 drives agent 0, branch 2 drives agent 1
+            output = torch.cat((output, output_2), dim=2)   # shape = (batch_size, 1, self.dim_out)
         #output = torch.clamp(output,min = -10,max = 10)
         # update internal states
         self.last_eta, self.last_output, self.last_xbar = eta_t, output, xbar_t
@@ -150,29 +180,67 @@ class PerfBoostController(nn.Module):
         return max_dev
 
     # setters and getters
+    def _ren_branches(self):
+        """
+        RENs in the canonical order used by every (de)serialization helper below.
+        With split=True the second branch must be included, otherwise saving/restoring
+        the "best" controller would only cover half of it.
+        """
+        return [self.c_ren, self.c_ren_2] if self.split else [self.c_ren]
+
+    @staticmethod
+    def _qualify(branch_idx, name):
+        """Prefix a REN parameter name with its branch (branch 0 keeps the bare name)."""
+        return name if branch_idx == 0 else 'c_ren_%d.%s' % (branch_idx + 1, name)
+
+    def _resolve(self, name):
+        """Inverse of `_qualify`: qualified name -> (REN branch, parameter name)."""
+        if '.' not in name:
+            return self.c_ren, name
+        branch_name, param_name = name.split('.', 1)
+        return getattr(self, branch_name), param_name
+
     def get_parameter_shapes(self):
-        return self.c_ren.get_parameter_shapes()
+        return OrderedDict(
+            (self._qualify(i, name), shape)
+            for i, ren in enumerate(self._ren_branches())
+            for name, shape in ren.get_parameter_shapes().items()
+        )
 
     def get_named_parameters(self):
-        return self.c_ren.get_named_parameters()
+        return OrderedDict(
+            (self._qualify(i, name), param)
+            for i, ren in enumerate(self._ren_branches())
+            for name, param in ren.get_named_parameters().items()
+        )
 
     def get_parameters_as_vector(self):
         # TODO: implement without numpy
-        return np.concatenate([p.detach().clone().cpu().numpy().flatten() for p in self.c_ren.parameters()])
-    
+        # driven by get_named_parameters so the ordering matches set_parameters_as_vector
+        return np.concatenate([
+            p.detach().clone().cpu().numpy().flatten()
+            for p in self.get_named_parameters().values()
+        ])
+
     def get_mlp_parameters(self):
-        # TODO: implement without numpy
-        return self.MLP.state_dict()
-    
-    def set_mlp_parameters(self,params):
-        # TODO: implement without numpy
-        self.MLP.load_state_dict(params)
+        # deepcopy: state_dict() returns live references to the weight tensors, so without
+        # it a saved "best" snapshot keeps tracking the weights as training continues
+        params = {'mlp': deepcopy(self.MLP.state_dict())}
+        if self.split:
+            params['mlp_2'] = deepcopy(self.MLP_2.state_dict())
+        return params
+
+    def set_mlp_parameters(self, params):
+        self.MLP.load_state_dict(params['mlp'])
+        if self.split:
+            self.MLP_2.load_state_dict(params['mlp_2'])
 
     def set_parameter(self, name, value):
-        current_val = getattr(self.c_ren, name)
+        ren, param_name = self._resolve(name)
+        current_val = getattr(ren, param_name)
         value = torch.nn.Parameter(to_tensor(value.reshape(current_val.shape)))
-        setattr(self.c_ren, name, value)
-        self.c_ren._update_model_param()    # update dependent params
+        setattr(ren, param_name, value)
+        ren._update_model_param()    # update dependent params
 
     def set_parameters(self, param_dict):
         for name, value in param_dict.items():
@@ -182,7 +250,7 @@ class PerfBoostController(nn.Module):
         idx = 0
         for name, shape in self.get_parameter_shapes().items():
             if len(shape) == 1:
-                dim = shape
+                dim = shape[0]
             elif len(shape) == 2:
                 dim = shape[0]*shape[1]
             else:

@@ -57,6 +57,7 @@ def main():
         n_agents=args.n_agents,
         std_ini=args.std_init_plant,
         min_dist=args.min_dist,
+        central_data=args.central_data,
     )
     train_data, test_data = dataset.get_data(num_train_samples=args.num_rollouts, num_test_samples=args.num_test_samples)
     train_data, test_data = train_data.to(device), test_data.to(device)
